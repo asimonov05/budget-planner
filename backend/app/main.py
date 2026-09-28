@@ -12,7 +12,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .api import auth, catalog, finance, io
+from .api import admin, auth, catalog, finance, io
 from .config import config
 from .db import verify_database
 from .errors import (
@@ -68,6 +68,7 @@ def ready() -> dict:
 
 
 api.include_router(auth.router)
+api.include_router(admin.router)
 api.include_router(catalog.router)
 api.include_router(finance.router)
 api.include_router(io.router)

@@ -13,6 +13,7 @@ class Config:
     session_days: int = 30
     cookie_secure: bool = False
     require_safe_sqlite: bool = False
+    debug_admin_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -25,6 +26,7 @@ class Config:
             cookie_secure=os.getenv("SESSION_COOKIE_SECURE", os.getenv("COOKIE_SECURE", "0"))
             == "1",
             require_safe_sqlite=os.getenv("REQUIRE_SAFE_SQLITE", "0") == "1",
+            debug_admin_enabled=os.getenv("DEBUG_ADMIN_ENABLED", "0") == "1",
         )
 
 

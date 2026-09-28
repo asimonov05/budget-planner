@@ -2,9 +2,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   COLOR_SCHEME_STORAGE_KEY,
+  FONT_STORAGE_KEY,
   THEME_STORAGE_KEY,
   ThemeProvider,
   readColorScheme,
+  readFontChoice,
   readThemePreference,
   resolveThemePreference,
   useTheme,
@@ -46,14 +48,16 @@ class MediaQueryMock {
 }
 
 function Probe() {
-  const { preference, resolvedTheme, colorScheme, setPreference, setColorScheme } = useTheme()
+  const { preference, resolvedTheme, colorScheme, fontChoice, setPreference, setColorScheme, setFontChoice } = useTheme()
   return <div>
     <span data-testid="preference">{preference}</span>
     <span data-testid="resolved">{resolvedTheme}</span>
     <span data-testid="color-scheme">{colorScheme}</span>
+    <span data-testid="font-choice">{fontChoice}</span>
     <button onClick={() => setPreference('dark')}>Тёмная</button>
     <button onClick={() => setPreference('system')}>Системная</button>
     <button onClick={() => setColorScheme('ocean')}>Океан</button>
+    <button onClick={() => setFontChoice('golos')}>Golos Text</button>
   </div>
 }
 
@@ -63,6 +67,7 @@ describe('theme preference', () => {
     window.localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
     document.documentElement.removeAttribute('data-color-scheme')
+    document.documentElement.removeAttribute('data-font')
     document.documentElement.style.removeProperty('color-scheme')
   })
 
@@ -75,25 +80,30 @@ describe('theme preference', () => {
     expect(readThemePreference({ getItem: () => 'unexpected' })).toBe('system')
     expect(readColorScheme({ getItem: () => 'plum' })).toBe('plum')
     expect(readColorScheme({ getItem: () => 'unexpected' })).toBe('forest')
+    expect(readFontChoice({ getItem: () => 'golos' })).toBe('golos')
+    expect(readFontChoice({ getItem: () => 'unexpected' })).toBe('classic')
     expect(resolveThemePreference('system', true)).toBe('dark')
     expect(resolveThemePreference('system', false)).toBe('light')
   })
 
-  it('applies and persists an explicit theme and color scheme immediately', () => {
+  it('applies and persists theme, color scheme and font immediately', () => {
     const media = new MediaQueryMock(false)
     vi.stubGlobal('matchMedia', vi.fn(() => media as unknown as MediaQueryList))
     render(<ThemeProvider><Probe /></ThemeProvider>)
 
     fireEvent.click(screen.getByRole('button', { name: 'Тёмная' }))
     fireEvent.click(screen.getByRole('button', { name: 'Океан' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Golos Text' }))
 
     expect(screen.getByTestId('preference')).toHaveTextContent('dark')
     expect(screen.getByTestId('resolved')).toHaveTextContent('dark')
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(document.documentElement).toHaveAttribute('data-color-scheme', 'ocean')
+    expect(document.documentElement).toHaveAttribute('data-font', 'golos')
     expect(document.documentElement.style.colorScheme).toBe('dark')
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
     expect(window.localStorage.getItem(COLOR_SCHEME_STORAGE_KEY)).toBe('ocean')
+    expect(window.localStorage.getItem(FONT_STORAGE_KEY)).toBe('golos')
   })
 
   it('tracks operating-system changes only in system mode', () => {

@@ -605,6 +605,7 @@ EXPORT_MODELS = [
     Category,
     Tag,
     Goal,
+    Loan,
     Transaction,
     TransactionTag,
     Transfer,
@@ -615,10 +616,27 @@ EXPORT_MODELS = [
     BudgetLimit,
     BudgetLimitOverride,
     GoalReserveMovement,
-    Loan,
     LoanScheduleItem,
     BudgetMonth,
 ]
+
+LEGACY_V1_COLUMNS = {
+    Transaction: {
+        "loan_id": None,
+        "principal_component_minor": None,
+        "interest_component_minor": None,
+        "prepayment_strategy": None,
+        "loan_balance_applied": None,
+    },
+    PlanItem: {"loan_id": None},
+    Loan: {
+        "annual_rate_bps": None,
+        "interest_method": "simple",
+        "schedule_mode": "manual",
+        "first_payment_date": None,
+        "annuity_payment_minor": None,
+    },
+}
 
 
 def model_rows(db: Session, model) -> list[dict]:
@@ -706,6 +724,35 @@ def validate_canonical_row(model, values: dict) -> None:
                 raise ValueError("balance adjustment cannot have a category")
             if not (values.get("comment") or "").strip():
                 raise ValueError("balance adjustment requires a comment")
+        if values.get("loan_id") is not None:
+            if values["type"] != "expense":
+                raise ValueError("loan-linked transaction must be an expense")
+            principal = values.get("principal_component_minor") or 0
+            interest = values.get("interest_component_minor") or 0
+            if principal < 0 or interest < 0 or principal + interest > values["amount_minor"]:
+                raise ValueError("invalid loan payment breakdown")
+            if (
+                values.get("loan_balance_applied") is True
+                and values.get("principal_component_minor") is None
+            ):
+                raise ValueError("applied loan payment needs a principal component")
+            if (
+                values.get("loan_balance_applied") is False
+                and values.get("prepayment_strategy") is not None
+            ):
+                raise ValueError("historical loan link cannot change repayment strategy")
+        elif any(
+            values.get(field) is not None
+            for field in (
+                "principal_component_minor",
+                "interest_component_minor",
+                "prepayment_strategy",
+                "loan_balance_applied",
+            )
+        ):
+            raise ValueError("loan payment breakdown requires a linked loan")
+        if values.get("prepayment_strategy") not in (None, "reduce_term", "reduce_payment"):
+            raise ValueError("invalid early repayment strategy")
     elif model is Transfer:
         if values["amount_minor"] <= 0 or values["from_account_id"] == values["to_account_id"]:
             raise ValueError("invalid transfer")
@@ -720,6 +767,10 @@ def validate_canonical_row(model, values: dict) -> None:
             raise ValueError("invalid plan month")
         if values["funding_source"] == "goal" and values.get("goal_id") is None:
             raise ValueError("goal-funded plan item requires goal_id")
+        if values.get("loan_id") is not None and (
+            values["kind"] != "expense" or values["funding_source"] == "goal"
+        ):
+            raise ValueError("loan-linked plan item must be a free-funded expense")
     elif model is PlanOverride:
         if not MONTH_PATTERN.fullmatch(values["month"]):
             raise ValueError("invalid plan override month")
@@ -745,6 +796,27 @@ def validate_canonical_row(model, values: dict) -> None:
     elif model is Loan:
         if values.get("principal_minor") is not None and values["principal_minor"] < 0:
             raise ValueError("loan principal cannot be negative")
+        if values["interest_method"] not in ("simple", "compound"):
+            raise ValueError("invalid loan interest method")
+        if values["schedule_mode"] not in ("manual", "auto"):
+            raise ValueError("invalid loan schedule mode")
+        if (
+            values.get("annual_rate_bps") is not None
+            and not 0 <= values["annual_rate_bps"] <= 100_000
+        ):
+            raise ValueError("invalid annual loan rate")
+        if values["schedule_mode"] == "auto" and any(
+            values.get(field) is None
+            for field in (
+                "principal_minor",
+                "principal_as_of",
+                "annual_rate_bps",
+                "first_payment_date",
+                "end_date",
+                "annuity_payment_minor",
+            )
+        ):
+            raise ValueError("automatic loan schedule is incomplete")
     elif model is LoanScheduleItem:
         if values["amount_minor"] <= 0 or values["paid_minor"] < 0:
             raise ValueError("invalid loan schedule amounts")
@@ -759,6 +831,11 @@ def validate_canonical_relationships(db: Session) -> None:
         account = db.get(Account, transaction.account_id)
         if not account or transaction.date < account.initial_balance_date:
             raise ValueError("transaction predates or references a missing account")
+        if transaction.loan_id is not None and not db.get(Loan, transaction.loan_id):
+            raise ValueError("transaction references a missing loan")
+    for plan in db.scalars(select(PlanItem)).all():
+        if plan.loan_id is not None and not db.get(Loan, plan.loan_id):
+            raise ValueError("plan item references a missing loan")
     for transfer in db.scalars(select(Transfer)).all():
         source = db.get(Account, transfer.from_account_id)
         target = db.get(Account, transfer.to_account_id)
@@ -854,7 +931,7 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -891,7 +968,8 @@ def import_project(
             if sum(x.file_size for x in archive.infolist()) > 100 * 1024 * 1024:
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
-            if manifest.get("schema_version") != 1:
+            schema_version = manifest.get("schema_version")
+            if schema_version not in (1, 2):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
             if set(manifest.get("files", [])) != expected - {"manifest.json"}:
                 raise HTTPException(
@@ -925,15 +1003,30 @@ def import_project(
                         raise ValueError(f"{name} contains an oversized field")
                     values = {}
                     for column in model.__table__.columns:
-                        values[column.name] = canonical_value(column, raw.get(column.name))
+                        if (
+                            schema_version == 1
+                            and column.name not in raw
+                            and column.name in LEGACY_V1_COLUMNS.get(model, {})
+                        ):
+                            values[column.name] = LEGACY_V1_COLUMNS[model][column.name]
+                        else:
+                            values[column.name] = canonical_value(column, raw.get(column.name))
                     validate_canonical_row(model, values)
                     db.add(model(**values))
                     count += 1
                 db.flush()
                 created[model.__tablename__] = count
+            if schema_version == 1:
+                for item in db.scalars(select(LoanScheduleItem)).all():
+                    for payment in db.scalars(
+                        select(Transaction).where(
+                            Transaction.external_source == f"loan_schedule:{item.id}"
+                        )
+                    ).all():
+                        payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 1, "created": created}
+            return {"schema_version": 2, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
     except (UnicodeError, ValueError, csv.Error, json.JSONDecodeError) as exc:

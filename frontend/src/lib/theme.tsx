@@ -12,15 +12,20 @@ import {
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 export type ColorScheme = 'forest' | 'ocean' | 'plum' | 'amber'
+export type FontChoice = 'classic' | 'golos'
 
 export const THEME_STORAGE_KEY = 'budget-planner-theme'
 export const COLOR_SCHEME_STORAGE_KEY = 'budget-planner-color-scheme'
+export const FONT_STORAGE_KEY = 'budget-planner-font'
 
 const isThemePreference = (value: unknown): value is ThemePreference =>
   value === 'light' || value === 'dark' || value === 'system'
 
 const isColorScheme = (value: unknown): value is ColorScheme =>
   value === 'forest' || value === 'ocean' || value === 'plum' || value === 'amber'
+
+const isFontChoice = (value: unknown): value is FontChoice =>
+  value === 'classic' || value === 'golos'
 
 function systemPrefersDark() {
   return typeof window !== 'undefined'
@@ -52,6 +57,18 @@ export function readColorScheme(
   }
 }
 
+export function readFontChoice(
+  storage?: Pick<Storage, 'getItem'>,
+): FontChoice {
+  try {
+    const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
+    const stored = source?.getItem(FONT_STORAGE_KEY)
+    return isFontChoice(stored) ? stored : 'classic'
+  } catch {
+    return 'classic'
+  }
+}
+
 export function resolveThemePreference(
   preference: ThemePreference,
   prefersDark = systemPrefersDark(),
@@ -73,34 +90,46 @@ export function applyColorScheme(colorScheme: ColorScheme) {
   document.documentElement.dataset.colorScheme = colorScheme
 }
 
+export function applyFontChoice(fontChoice: FontChoice) {
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.font = fontChoice
+}
+
 export function initializeTheme() {
   const preference = readThemePreference()
   const colorScheme = readColorScheme()
+  const fontChoice = readFontChoice()
   const resolvedTheme = resolveThemePreference(preference)
   applyResolvedTheme(resolvedTheme)
   applyColorScheme(colorScheme)
-  return { preference, resolvedTheme, colorScheme }
+  applyFontChoice(fontChoice)
+  return { preference, resolvedTheme, colorScheme, fontChoice }
 }
 
 interface ThemeContextValue {
   preference: ThemePreference
   resolvedTheme: ResolvedTheme
   colorScheme: ColorScheme
+  fontChoice: FontChoice
   setPreference: (preference: ThemePreference) => void
   setColorScheme: (colorScheme: ColorScheme) => void
+  setFontChoice: (fontChoice: FontChoice) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
   preference: 'system',
   resolvedTheme: 'light',
   colorScheme: 'forest',
+  fontChoice: 'classic',
   setPreference: () => undefined,
   setColorScheme: () => undefined,
+  setFontChoice: () => undefined,
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readThemePreference)
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>(readColorScheme)
+  const [fontChoice, setFontChoiceState] = useState<FontChoice>(readFontChoice)
   const [prefersDark, setPrefersDark] = useState(systemPrefersDark)
   const resolvedTheme = resolveThemePreference(preference, prefersDark)
 
@@ -120,19 +149,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     applyResolvedTheme(resolvedTheme)
     applyColorScheme(colorScheme)
+    applyFontChoice(fontChoice)
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, preference)
       window.localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, colorScheme)
+      window.localStorage.setItem(FONT_STORAGE_KEY, fontChoice)
     } catch {
       // Theme still works for this session when storage is unavailable.
     }
-  }, [preference, resolvedTheme, colorScheme])
+  }, [preference, resolvedTheme, colorScheme, fontChoice])
 
   const setPreference = useCallback((next: ThemePreference) => setPreferenceState(next), [])
   const setColorScheme = useCallback((next: ColorScheme) => setColorSchemeState(next), [])
+  const setFontChoice = useCallback((next: FontChoice) => setFontChoiceState(next), [])
   const value = useMemo(
-    () => ({ preference, resolvedTheme, colorScheme, setPreference, setColorScheme }),
-    [preference, resolvedTheme, colorScheme, setPreference, setColorScheme],
+    () => ({ preference, resolvedTheme, colorScheme, fontChoice, setPreference, setColorScheme, setFontChoice }),
+    [preference, resolvedTheme, colorScheme, fontChoice, setPreference, setColorScheme, setFontChoice],
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

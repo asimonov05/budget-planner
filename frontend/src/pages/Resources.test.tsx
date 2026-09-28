@@ -11,6 +11,7 @@ describe('transaction resource integration', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
+    fetchMock.mockClear()
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
       if (init?.method === 'POST' && path === '/api/v1/transactions') return jsonResponse({ id: 9 })
@@ -22,6 +23,7 @@ describe('transaction resource integration', () => {
       if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', current_balance_minor: 100_000, version: 1 }, { id: 5, name: 'Накопительный', current_balance_minor: 50_000, version: 1 }], total: 2 })
       if (path === '/api/v1/categories?include_archived=true') return jsonResponse({ items: [{ id: 4, name: 'Продукты', kind: 'expense', archived: false, version: 1 }], total: 1 })
       if (path === '/api/v1/tags?include_archived=true') return jsonResponse({ items: [{ id: 6, name: 'Семья', archived: false, version: 1 }], total: 1 })
+      if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', archived: false }], total: 1 })
       throw new Error(`Unexpected request: ${path}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -64,6 +66,71 @@ describe('transaction resource integration', () => {
       category_id: 4, description: 'Обед', comment: null, tag_ids: [6],
     })
     expect(new Headers(request?.headers).get('Idempotency-Key')).toMatch(/^transaction-/)
+  })
+
+  it('links a new actual loan payment with the early repayment strategy', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    await screen.findByText('Операций пока нет')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Досрочное погашение' } })
+    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '10 000' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-21' } })
+    fireEvent.change(screen.getByLabelText('Счёт'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Кредит'), { target: { value: '7' } })
+    fireEvent.change(screen.getByLabelText('Досрочное погашение'), { target: { value: 'reduce_term' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({
+      loan_id: 7, prepayment_strategy: 'reduce_term', amount_minor: 1_000_000,
+    }))
+  })
+
+  it('links an existing expense to a loan without changing the stated debt', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (init?.method === 'POST' && path === '/api/v1/loans/7/transactions/15/link') return jsonResponse({ loan_id: 7, transaction_id: 15 })
+      if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [{ id: 15, type: 'expense', description: 'Старый платёж', amount_minor: 10_000, date: '2026-02-01', account_id: 3, version: 1 }], total: 1 })
+      if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', archived: false }], total: 1 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', archived: false }], total: 1 })
+      if (path === '/api/v1/categories?include_archived=true' || path === '/api/v1/tags?include_archived=true' || path === '/api/v1/transfers') return jsonResponse({ items: [], total: 0 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    await screen.findByText('Старый платёж')
+    fireEvent.click(screen.getByRole('button', { name: 'Связать с кредитом Старый платёж' }))
+    fireEvent.change(screen.getByLabelText('Кредит'), { target: { value: '7' } })
+    fireEvent.change(screen.getByLabelText('В основной долг'), { target: { value: '80' } })
+    fireEvent.change(screen.getByLabelText('В проценты'), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Связать' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/loans/7/transactions/15/link' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/loans/7/transactions/15/link' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual({ principal_minor: 8_000, interest_minor: 2_000, already_reflected_in_balance: true, prepayment_strategy: null })
+    expect(new Headers(request?.headers).get('Idempotency-Key')).toMatch(/^loan-link-/)
+  })
+
+  it('can remove a historical link that did not change the debt balance', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (init?.method === 'DELETE' && path === '/api/v1/loans/7/transactions/15/link?version=2') return new Response(null, { status: 204 })
+      if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [{ id: 15, type: 'expense', description: 'Старый платёж', amount_minor: 10_000, date: '2026-02-01', account_id: 3, loan_id: 7, loan_balance_applied: false, version: 2 }], total: 1 })
+      if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', archived: false }], total: 1 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', archived: false }], total: 1 })
+      if (path === '/api/v1/categories?include_archived=true' || path === '/api/v1/tags?include_archived=true' || path === '/api/v1/transfers') return jsonResponse({ items: [], total: 0 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    await screen.findByText('Старый платёж')
+    fireEvent.click(screen.getByRole('button', { name: 'Отвязать от кредита Старый платёж' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/loans/7/transactions/15/link?version=2' && init?.method === 'DELETE')).toBe(true))
   })
 
   it('shows transfer history with resolved account names', async () => {
@@ -126,6 +193,7 @@ describe('archived directory references in resource forms', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
+    fetchMock.mockClear()
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
       if (init?.method === 'PATCH' && path === '/api/v1/transactions/41') return jsonResponse({ id: 41, version: 3 })
@@ -220,6 +288,7 @@ describe('plan item reconciliation integration', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
+    fetchMock.mockClear()
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
       if (init?.method === 'POST' && path === '/api/v1/plan-items') return jsonResponse({ id: 22 })
@@ -235,6 +304,7 @@ describe('plan item reconciliation integration', () => {
       if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', archived: false, version: 1 }], total: 1 })
       if (path === '/api/v1/categories?include_archived=true') return jsonResponse({ items: [{ id: 4, name: 'Жильё', kind: 'expense', archived: false, version: 1 }], total: 1 })
       if (path === '/api/v1/tags?include_archived=true') return jsonResponse({ items: [{ id: 8, name: 'Обязательное', archived: false, version: 1 }], total: 1 })
+      if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', archived: false }], total: 1 })
       throw new Error(`Unexpected request: ${path}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -267,6 +337,23 @@ describe('plan item reconciliation integration', () => {
     expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({
       kind: 'expense', title: 'Интернет', amount_minor: 90_000, account_id: 3, category_id: 4, tag_ids: [8],
     }))
+  })
+
+  it('links a planned payment to a loan', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="payment" /></QueryClientProvider>)
+
+    await screen.findByText('Аренда')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить платеж' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Ипотека' } })
+    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '1 500' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-15' } })
+    fireEvent.change(screen.getByLabelText('Кредит'), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/plan-items' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/plan-items' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ loan_id: 7 }))
   })
 
   it('offers only unmatched facts and posts a completed plan match idempotently', async () => {
@@ -316,6 +403,7 @@ describe('loan schedule integration', () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
+    fetchMock.mockClear()
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
       if (init?.method === 'POST' && path === '/api/v1/loans/7/schedule/11/payments') return jsonResponse({ transaction_id: 50 })
@@ -358,6 +446,40 @@ describe('loan schedule integration', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/loans/7/schedule' && init?.method === 'POST')).toBe(true))
     const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/loans/7/schedule' && init?.method === 'POST')!
     expect(JSON.parse(String(request?.body))).toEqual({ due_date: '2026-11-15', amount_minor: 150_000, principal_minor: 120_000, interest_minor: 30_000 })
+  })
+
+  it('shows the annuity breakdown and previews shorter-term prepayment', async () => {
+    const baseline = {
+      regular_payment_minor: 55_000, interest_minor: 10_000, principal_minor: 100_000,
+      total_minor: 110_000, payoff_date: '2026-11-15',
+      rows: [
+        { due_date: '2026-10-15', payment_minor: 55_000, interest_minor: 6_000, principal_minor: 49_000, remaining_principal_minor: 51_000, early_principal_minor: 0 },
+        { due_date: '2026-11-15', payment_minor: 55_000, interest_minor: 4_000, principal_minor: 51_000, remaining_principal_minor: 0, early_principal_minor: 0 },
+      ],
+    }
+    fetchMock.mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', interest_method: 'simple', principal_minor: 100_000, archived: false, version: 1 }], total: 1 })
+      if (path === '/api/v1/loans/7/projection') return jsonResponse({ baseline })
+      if (path.startsWith('/api/v1/loans/7/projection?')) return jsonResponse({ baseline, scenario: { ...baseline, interest_minor: 7_000, payoff_date: '2026-10-15', rows: [baseline.rows[0]] }, interest_savings_minor: 3_000 })
+      if (path === '/api/v1/transactions?loan_id=7&limit=500&offset=0') return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/categories?include_archived=true') return jsonResponse({ items: [], total: 0 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="loan" /></QueryClientProvider>)
+
+    await screen.findByText('Ипотека')
+    fireEvent.click(screen.getByRole('button', { name: 'График кредита Ипотека' }))
+    expect(await screen.findByText('Будущие проценты')).toBeInTheDocument()
+    expect(screen.getByText('Основной долг')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Дата по графику'), { target: { value: '2026-10-15' } })
+    fireEvent.change(screen.getByLabelText('Дополнительная сумма'), { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать' }))
+
+    await screen.findByText(/Экономия на процентах/)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('early_strategy=reduce_term'))).toBe(true)
   })
 
   it('records a partial payment and exposes explicit full completion', async () => {

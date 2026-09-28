@@ -56,7 +56,7 @@ describe('settings directories', () => {
     expect(JSON.parse(String(request?.body))).toEqual({ name: 'Основная карта', type: 'cash', version: 3 })
   })
 
-  it('switches between brightness modes and color schemes', () => {
+  it('switches between brightness modes, color schemes and fonts', () => {
     renderSettings()
     fireEvent.click(screen.getByRole('button', { name: /Оформление/ }))
 
@@ -75,6 +75,11 @@ describe('settings directories', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Слива/ }))
     expect(screen.getByRole('radio', { name: /Слива/ })).toBeChecked()
     expect(document.documentElement).toHaveAttribute('data-color-scheme', 'plum')
+
+    expect(screen.getByRole('radio', { name: /Классический/ })).toBeChecked()
+    fireEvent.click(screen.getByRole('radio', { name: /Golos Text/ }))
+    expect(screen.getByRole('radio', { name: /Golos Text/ })).toBeChecked()
+    expect(document.documentElement).toHaveAttribute('data-font', 'golos')
   })
 
   it('archives, restores and hard-deletes with the current version', async () => {

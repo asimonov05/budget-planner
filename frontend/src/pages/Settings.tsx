@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, CheckCircle2, CirclePlus, DatabaseBackup, Download, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
 import { ApiError, api, asList, download, jsonBody, queryString } from '../lib/api'
 import { formatMoney, parseMoney, todayISO } from '../lib/format'
-import { useTheme, type ColorScheme, type ThemePreference } from '../lib/theme'
+import { useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
 import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 
@@ -56,8 +56,17 @@ const colorSchemeChoices: Array<{
   { value: 'amber', title: 'Янтарь', description: 'Тёплые золотистые оттенки.' },
 ]
 
+const fontChoices: Array<{
+  value: FontChoice
+  title: string
+  description: string
+}> = [
+  { value: 'classic', title: 'Классический', description: 'Привычный текст и выразительные заголовки.' },
+  { value: 'golos', title: 'Golos Text', description: 'Современный шрифт для текста и заголовков.' },
+]
+
 function AppearanceSettings() {
-  const { preference, resolvedTheme, colorScheme, setPreference, setColorScheme } = useTheme()
+  const { preference, resolvedTheme, colorScheme, fontChoice, setPreference, setColorScheme, setFontChoice } = useTheme()
   const activeColorScheme = colorSchemeChoices.find((choice) => choice.value === colorScheme)!
   return <Card className="settings-card appearance-card">
     <div className="section-head"><div><span className="eyebrow">Интерфейс</span><h2>Тема оформления</h2></div></div>
@@ -99,6 +108,25 @@ function AppearanceSettings() {
           <span className="color-scheme-swatch" aria-hidden="true"><i/><i/><i/></span>
           <span className="color-scheme-copy"><strong>{title}</strong><small>{description}</small></span>
           <span className="color-scheme-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
+        </label>
+      })}
+    </div>
+    <div className="appearance-subsection"><span className="eyebrow">Типографика</span><h3>Шрифт</h3><p>Выберите начертание, удобное для чтения бюджета.</p></div>
+    <div className="font-choice-options" role="radiogroup" aria-label="Шрифт интерфейса">
+      {fontChoices.map(({ value, title, description }) => {
+        const selected = fontChoice === value
+        return <label key={value} className={`font-choice font-choice--${value} ${selected ? 'is-selected' : ''}`}>
+          <input
+            className="theme-choice-input"
+            type="radio"
+            name="interface-font"
+            value={value}
+            checked={selected}
+            onChange={() => setFontChoice(value)}
+          />
+          <span className="font-choice-preview" aria-hidden="true"><strong>Бюджет на месяц</strong><small>Доходы, расходы и цели</small></span>
+          <span className="font-choice-copy"><strong>{title}</strong><small>{description}</small></span>
+          <span className="font-choice-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
         </label>
       })}
     </div>

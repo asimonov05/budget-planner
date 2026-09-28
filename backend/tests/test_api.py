@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import io
+import json
 import sqlite3
 import zipfile
 from datetime import date
@@ -15,6 +17,8 @@ from app.models import (
     BudgetLimit,
     Category,
     Goal,
+    Loan,
+    LoanScheduleItem,
     PlanItem,
     PlanItemTag,
     PlanOverride,
@@ -566,6 +570,91 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     assert db.scalar(select(func.count()).select_from(PlanItemTag)) == 1
     after = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2}).json()
     assert after == before
+
+
+def test_legacy_project_archive_restores_loan_payment_links(client, auth, account, db):
+    loan = Loan(name="Старый кредит", principal_minor=100_000, principal_as_of=date(2026, 1, 1))
+    db.add(loan)
+    db.flush()
+    scheduled = LoanScheduleItem(
+        loan_id=loan.id,
+        due_date=date(2026, 2, 1),
+        amount_minor=1_000,
+        paid_minor=1_000,
+        status="paid",
+    )
+    db.add(scheduled)
+    db.flush()
+    db.add(
+        Transaction(
+            type="expense",
+            amount_minor=1_000,
+            date=date(2026, 2, 1),
+            account_id=account.id,
+            description="Платёж",
+            external_source=f"loan_schedule:{scheduled.id}",
+        )
+    )
+    db.commit()
+
+    exported = client.get("/api/v1/exports/project")
+    assert exported.status_code == 200
+    legacy = io.BytesIO()
+    removed = {
+        "loans.csv": {
+            "annual_rate_bps",
+            "interest_method",
+            "schedule_mode",
+            "first_payment_date",
+            "annuity_payment_minor",
+        },
+        "transactions.csv": {
+            "loan_id",
+            "principal_component_minor",
+            "interest_component_minor",
+            "prepayment_strategy",
+            "loan_balance_applied",
+        },
+        "plan_items.csv": {"loan_id"},
+    }
+    with (
+        zipfile.ZipFile(io.BytesIO(exported.content)) as source,
+        zipfile.ZipFile(legacy, "w") as destination,
+    ):
+        for name in source.namelist():
+            if name == "manifest.json":
+                manifest = json.loads(source.read(name))
+                manifest["schema_version"] = 1
+                destination.writestr(name, json.dumps(manifest))
+            elif name in removed:
+                reader = csv.DictReader(io.StringIO(source.read(name).decode("utf-8")))
+                fields = [field for field in reader.fieldnames or [] if field not in removed[name]]
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=fields)
+                writer.writeheader()
+                for row in reader:
+                    writer.writerow({field: row[field] for field in fields})
+                destination.writestr(name, output.getvalue())
+            else:
+                destination.writestr(name, source.read(name))
+
+    for model in reversed(EXPORT_MODELS):
+        db.execute(delete(model))
+    db.commit()
+    imported = client.post(
+        "/api/v1/imports/project",
+        files={"file": ("legacy.zip", legacy.getvalue(), "application/zip")},
+        headers=auth,
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["schema_version"] == 2
+    db.expire_all()
+    restored_loan = db.scalar(select(Loan))
+    restored_payment = db.scalar(
+        select(Transaction).where(Transaction.external_source.is_not(None))
+    )
+    assert restored_loan.schedule_mode == "manual"
+    assert restored_payment.loan_id == restored_loan.id
 
 
 def test_project_import_rejects_traversal(client, auth):

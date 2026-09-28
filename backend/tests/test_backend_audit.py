@@ -46,6 +46,30 @@ def test_origin_cannot_be_whitelisted_by_spoofed_forwarded_host(client, auth):
     assert response.status_code == 403
 
 
+def test_goal_without_initial_reserve_can_be_created_when_opening_free_cash_is_negative(
+    client, auth, db
+):
+    db.add(Goal(name="Существующая", target_amount_minor=10_000, initial_reserved_minor=1_000))
+    db.commit()
+
+    empty_reserve = client.post(
+        "/api/v1/goals",
+        json={"name": "Новая", "target_amount_minor": 300_000_00, "initial_reserved_minor": 0},
+        headers=auth,
+    )
+    assert empty_reserve.status_code == 201, empty_reserve.text
+
+    positive_reserve = client.post(
+        "/api/v1/goals",
+        json={"name": "Ещё одна", "target_amount_minor": 300_000_00, "initial_reserved_minor": 1},
+        headers=auth,
+    )
+    assert positive_reserve.status_code == 409
+    assert positive_reserve.json()["message"] == (
+        "Начальный резерв цели превышает свободные деньги на дату начала учёта"
+    )
+
+
 def test_goal_movements_preserve_reserve_invariants(client, auth, account, db):
     goal = client.post(
         "/api/v1/goals",

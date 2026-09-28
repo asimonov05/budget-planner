@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from ..core.calculations import (
     split_evenly,
 )
 from ..db import get_db
+from ..core.loans import annuity_payment, interest_for_period, monthly_dates, project_loan
 from ..models import (
     Account,
     AppSettings,
@@ -52,6 +54,7 @@ from ..schemas import (
     LoanScheduleCreate,
     LoanScheduleOut,
     LoanScheduleUpdate,
+    LoanTransactionLink,
     LoanUpdate,
     MatchInput,
     OverrideInput,
@@ -194,6 +197,7 @@ def list_transactions(
     account_id: int | None = None,
     category_id: int | None = None,
     goal_id: int | None = None,
+    loan_id: int | None = None,
     tag_ids: list[int] = Query(default=[]),
     tag_mode: str = "or",
     limit: int = Query(100, ge=1, le=500),
@@ -208,6 +212,7 @@ def list_transactions(
         Transaction.account_id == account_id if account_id else None,
         Transaction.category_id == category_id if category_id else None,
         Transaction.goal_id == goal_id if goal_id else None,
+        Transaction.loan_id == loan_id if loan_id else None,
     ):
         if condition is not None:
             statement = statement.where(condition)
@@ -269,6 +274,8 @@ def create_transaction(
             status_code=422,
             detail="Goal expenses and refunds must use the atomic goal allocation endpoint",
         )
+    if body.prepayment_strategy and body.loan_id is None:
+        raise HTTPException(status_code=422, detail="Выберите кредит для досрочного платежа")
     if body.type == "adjustment" and body.category_id is not None:
         raise HTTPException(status_code=422, detail="Balance adjustment cannot have a category")
     if body.type != "adjustment":
@@ -277,6 +284,63 @@ def create_transaction(
             body.category_id,
             "income" if body.type == "income" else "expense",
         )
+    loan = None
+    if body.loan_id is not None:
+        if body.type != "expense":
+            raise HTTPException(status_code=422, detail="С кредитом можно связать только расход")
+        loan = db.get(Loan, body.loan_id)
+        if not loan:
+            missing("Loan")
+        if loan.archived or loan.schedule_mode != "auto":
+            raise HTTPException(
+                status_code=409,
+                detail="Для этого кредита проведите платёж через ручной график или восстановите кредит",
+            )
+        if (
+            loan.principal_minor is None
+            or loan.principal_as_of is None
+            or loan.annual_rate_bps is None
+        ):
+            raise HTTPException(status_code=422, detail="У кредита не заполнены условия расчёта")
+        if body.date < loan.principal_as_of:
+            raise HTTPException(status_code=422, detail="Платёж раньше даты текущего остатка долга")
+        future_dates = monthly_dates(loan.first_payment_date, loan.end_date, loan.principal_as_of)
+        if not body.prepayment_strategy and future_dates and body.date < future_dates[0]:
+            raise HTTPException(
+                status_code=422,
+                detail="Обычный платёж раньше даты графика; для дополнительного платежа выберите вариант досрочного погашения",
+            )
+        accrued_interest = interest_for_period(
+            loan.principal_minor,
+            loan.annual_rate_bps,
+            loan.principal_as_of,
+            body.date,
+            loan.interest_method,
+        )
+        principal_part = body.amount_minor - accrued_interest
+        if principal_part <= 0 or principal_part > loan.principal_minor:
+            raise HTTPException(
+                status_code=409,
+                detail="Платёж должен покрыть начисленные проценты и не превышать остаток долга",
+            )
+        new_principal = loan.principal_minor - principal_part
+        if new_principal and loan.end_date and body.date >= loan.end_date:
+            raise HTTPException(
+                status_code=409, detail="После срока кредита должен быть погашен весь долг"
+            )
+        body_data["principal_component_minor"] = principal_part
+        body_data["interest_component_minor"] = accrued_interest
+        body_data["loan_balance_applied"] = True
+        loan.principal_minor = new_principal
+        loan.principal_as_of = body.date
+        if body.prepayment_strategy == "reduce_payment" and new_principal:
+            dates = monthly_dates(loan.first_payment_date, loan.end_date, body.date)
+            loan.annuity_payment_minor = annuity_payment(
+                new_principal, loan.annual_rate_bps, loan.interest_method, body.date, dates
+            )
+        if not new_principal:
+            loan.annuity_payment_minor = 0
+        loan.version += 1
     tag_ids = body_data.pop("tag_ids")
     value = Transaction(**body_data, tags=tags_by_ids(db, tag_ids))
     db.add(value)
@@ -315,6 +379,13 @@ def update_transaction(
         raise HTTPException(
             status_code=409,
             detail="A loan payment cannot be changed independently of its schedule item",
+        )
+    if value.loan_id is not None and any(
+        data[field] != getattr(value, field) for field in ("amount_minor", "date") if field in data
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Связанный с кредитом платёж нельзя изменить без пересчёта долга",
         )
     if "amount_minor" in data and value.type != "adjustment":
         matched_amount = db.scalar(
@@ -390,6 +461,11 @@ def delete_transaction(
         raise HTTPException(
             status_code=409,
             detail="Loan payment cannot be deleted independently of its schedule item",
+        )
+    if value.loan_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Связанный с кредитом платёж нельзя удалить без пересчёта долга",
         )
     audit_delete(db, "transaction", value)
     db.delete(value)
@@ -524,6 +600,14 @@ def create_plan_item(body: PlanItemCreate, _=Depends(require_csrf), db: Session 
     ensure_category_kind(db, body.category_id, body.kind)
     if body.goal_id and not db.get(Goal, body.goal_id):
         missing("Goal")
+    if body.loan_id:
+        loan = db.get(Loan, body.loan_id)
+        if not loan:
+            missing("Loan")
+        if loan.archived:
+            raise HTTPException(
+                status_code=409, detail="Архивный кредит нельзя выбрать для платежа"
+            )
     first_occurrence = (
         body.start_date or body.date or (month_date(body.month) if body.month else None)
     )
@@ -553,6 +637,7 @@ def update_plan_item(
         "certainty",
         "account_id",
         "category_id",
+        "loan_id",
     }
     protected_changes = {
         field
@@ -589,6 +674,18 @@ def update_plan_item(
             )
     if data.get("account_id") and not db.get(Account, data["account_id"]):
         missing("Account")
+    if data.get("loan_id") is not None:
+        loan = db.get(Loan, data["loan_id"])
+        if not loan:
+            missing("Loan")
+        if loan.archived and data["loan_id"] != value.loan_id:
+            raise HTTPException(
+                status_code=409, detail="Архивный кредит нельзя выбрать для платежа"
+            )
+        if value.kind != "expense" or value.funding_source == "goal":
+            raise HTTPException(
+                status_code=422, detail="С кредитом можно связать только обычный расход"
+            )
     ensure_category_kind(db, data.get("category_id", value.category_id), value.kind)
     for key, val in data.items():
         setattr(value, key, val)
@@ -879,9 +976,11 @@ def create_goal(body: GoalCreate, _=Depends(require_csrf), db: Session = Depends
         ).all()
     )
     opening_reserved = sum(goal.initial_reserved_minor for goal in db.scalars(select(Goal)).all())
-    if body.initial_reserved_minor > opening_cash - opening_reserved:
+    available_opening_cash = max(0, opening_cash - opening_reserved)
+    if body.initial_reserved_minor > available_opening_cash:
         raise HTTPException(
-            status_code=409, detail="Initial goal reserves exceed money outside goals"
+            status_code=409,
+            detail="Начальный резерв цели превышает свободные деньги на дату начала учёта",
         )
     value = Goal(**body.model_dump())
     db.add(value)
@@ -1122,8 +1221,101 @@ def list_loans(
             for item in schedule
             if item.status not in ("paid", "cancelled")
         )
+        payments = db.scalars(
+            select(Transaction).where(Transaction.loan_id == loan.id, Transaction.type == "expense")
+        ).all()
+        value["paid_total_minor"] = sum(payment.amount_minor for payment in payments)
+        value["paid_principal_minor"] = sum(
+            payment.principal_component_minor or 0 for payment in payments
+        )
+        value["paid_interest_minor"] = sum(
+            payment.interest_component_minor or 0 for payment in payments
+        )
+        value["paid_unclassified_minor"] = (
+            value["paid_total_minor"] - value["paid_principal_minor"] - value["paid_interest_minor"]
+        )
+        if loan.schedule_mode == "auto" and loan.principal_minor:
+            projection = projected_loan(loan)
+            value["schedule_remaining_minor"] = projection.total_minor
+            value["projected_interest_minor"] = projection.interest_minor
+            value["projected_payoff_date"] = (
+                projection.payoff_date.isoformat() if projection.payoff_date else None
+            )
         items.append(value)
     return {"items": items, "total": len(items)}
+
+
+def projected_loan(loan: Loan, **early: object):
+    if (
+        loan.schedule_mode != "auto"
+        or loan.principal_minor is None
+        or loan.principal_as_of is None
+        or loan.annual_rate_bps is None
+        or loan.first_payment_date is None
+        or loan.end_date is None
+    ):
+        raise HTTPException(
+            status_code=422, detail="Для расчёта заполните долг, ставку и даты кредита"
+        )
+    try:
+        dates = monthly_dates(loan.first_payment_date, loan.end_date, loan.principal_as_of)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if loan.principal_minor and not dates:
+        raise HTTPException(status_code=422, detail="После даты остатка долга нет будущих платежей")
+    try:
+        return project_loan(
+            loan.principal_minor,
+            loan.annual_rate_bps,
+            loan.interest_method,
+            loan.principal_as_of,
+            dates,
+            regular_payment_minor=loan.annuity_payment_minor,
+            **early,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def configure_loan_schedule(loan: Loan) -> None:
+    if loan.schedule_mode != "auto":
+        loan.annuity_payment_minor = None
+        return
+    if (
+        loan.principal_minor is None
+        or loan.principal_as_of is None
+        or loan.annual_rate_bps is None
+        or loan.first_payment_date is None
+        or loan.end_date is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Для аннуитетного графика укажите остаток долга, дату, ставку, первый платёж и срок",
+        )
+    try:
+        dates = monthly_dates(loan.first_payment_date, loan.end_date, loan.principal_as_of)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if loan.principal_minor and not dates:
+        raise HTTPException(status_code=422, detail="Первый платёж должен быть после даты долга")
+    try:
+        loan.annuity_payment_minor = annuity_payment(
+            loan.principal_minor,
+            loan.annual_rate_bps,
+            loan.interest_method,
+            loan.principal_as_of,
+            dates,
+        )
+        project_loan(
+            loan.principal_minor,
+            loan.annual_rate_bps,
+            loan.interest_method,
+            loan.principal_as_of,
+            dates,
+            regular_payment_minor=loan.annuity_payment_minor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/loans", response_model=LoanOut, status_code=201)
@@ -1133,6 +1325,7 @@ def create_loan(body: LoanCreate, _=Depends(require_csrf), db: Session = Depends
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(status_code=422, detail="end_date cannot precede start_date")
     value = Loan(**body.model_dump())
+    configure_loan_schedule(value)
     db.add(value)
     db.commit()
     db.refresh(value)
@@ -1151,9 +1344,12 @@ def update_loan(
         missing("Loan")
     ensure_version(value, body.version)
     data = body.model_dump(exclude_unset=True, exclude={"version"})
+    changed = {key for key, val in data.items() if val != getattr(value, key)}
     if "name" in data and data["name"] is None:
         raise HTTPException(status_code=422, detail="name cannot be null")
     if data.get("archived") is True:
+        if value.schedule_mode == "auto" and (value.principal_minor or 0) > 0:
+            raise HTTPException(status_code=409, detail="Сначала погасите остаток кредита")
         remaining_schedule = db.scalar(
             select(func.count())
             .select_from(LoanScheduleItem)
@@ -1175,7 +1371,15 @@ def update_loan(
     end_date = data.get("end_date", value.end_date)
     if start_date and end_date and end_date < start_date:
         raise HTTPException(status_code=422, detail="end_date cannot precede start_date")
-    if {"principal_minor", "principal_as_of"} & data.keys():
+    if changed & {"schedule_mode", "first_payment_date"}:
+        existing_rows = db.scalar(
+            select(func.count())
+            .select_from(LoanScheduleItem)
+            .where(LoanScheduleItem.loan_id == entity_id)
+        )
+        if existing_rows and data.get("schedule_mode", value.schedule_mode) == "auto":
+            raise HTTPException(status_code=409, detail="Сначала удалите ручной график кредита")
+    if {"principal_minor", "principal_as_of"} & changed:
         if value.principal_as_of:
             ensure_open(db, value.principal_as_of)
         principal_as_of = data.get("principal_as_of", value.principal_as_of)
@@ -1183,6 +1387,18 @@ def update_loan(
             ensure_open(db, principal_as_of)
     for key, val in data.items():
         setattr(value, key, val)
+    if value.interest_method is None or value.schedule_mode is None:
+        raise HTTPException(status_code=422, detail="Способ расчёта не может быть пустым")
+    if changed & {
+        "principal_minor",
+        "principal_as_of",
+        "annual_rate_bps",
+        "interest_method",
+        "schedule_mode",
+        "first_payment_date",
+        "end_date",
+    }:
+        configure_loan_schedule(value)
     value.version += 1
     db.commit()
     db.refresh(value)
@@ -1209,6 +1425,12 @@ def delete_loan(
             status_code=409,
             detail="Loan has schedule or payment history; archive it instead",
         )
+    if db.scalar(
+        select(func.count()).select_from(PlanItem).where(PlanItem.loan_id == entity_id)
+    ) or db.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.loan_id == entity_id)
+    ):
+        raise HTTPException(status_code=409, detail="Кредит связан с платежами; архивируйте его")
     effective_date = value.principal_as_of or value.start_date
     if effective_date:
         ensure_open(db, effective_date)
@@ -1240,11 +1462,55 @@ def list_schedule(entity_id: int, _=Depends(require_user), db: Session = Depends
     return {"items": output, "total": len(output)}
 
 
+@router.get("/loans/{entity_id}/projection")
+def get_loan_projection(
+    entity_id: int,
+    early_payment_date: date | None = None,
+    early_amount_minor: int | None = Query(None, gt=0),
+    early_strategy: str | None = None,
+    _=Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    loan = db.get(Loan, entity_id)
+    if not loan:
+        missing("Loan")
+    baseline = projected_loan(loan)
+    result = {"baseline": jsonable_encoder(baseline)}
+    if early_payment_date is None and early_amount_minor is None and early_strategy is None:
+        return result
+    if not (early_payment_date and early_amount_minor and early_strategy):
+        raise HTTPException(
+            status_code=422, detail="Укажите дату, сумму и вариант досрочного платежа"
+        )
+    if early_strategy not in ("reduce_term", "reduce_payment"):
+        raise HTTPException(status_code=422, detail="Неизвестный вариант досрочного погашения")
+    row = next((row for row in baseline.rows if row.due_date == early_payment_date), None)
+    if row is None or row.remaining_principal_minor < early_amount_minor:
+        raise HTTPException(
+            status_code=422,
+            detail="Досрочный платёж должен приходиться на дату графика и не превышать остаток долга",
+        )
+    scenario = projected_loan(
+        loan,
+        early_payment_date=early_payment_date,
+        early_principal_minor=early_amount_minor,
+        early_strategy=early_strategy,
+    )
+    result["scenario"] = jsonable_encoder(scenario)
+    result["interest_savings_minor"] = baseline.interest_minor - scenario.interest_minor
+    return result
+
+
 def ensure_loan_schedule_mutable(loan: Loan) -> None:
     if loan.archived:
         raise HTTPException(
             status_code=409,
             detail="Loan is archived; restore it before changing its schedule",
+        )
+    if loan.schedule_mode == "auto":
+        raise HTTPException(
+            status_code=409,
+            detail="У кредита автоматический график; ручные строки доступны после переключения режима",
         )
 
 
@@ -1390,6 +1656,10 @@ def pay_loan_schedule_item(
         date=body.date,
         account_id=account_id,
         category_id=body.category_id,
+        loan_id=loan.id,
+        principal_component_minor=body.principal_minor,
+        interest_component_minor=body.interest_minor,
+        loan_balance_applied=body.principal_minor is not None and loan.principal_minor is not None,
         description=loan.name,
         comment=body.comment,
         external_source=f"loan_schedule:{item.id}",
@@ -1410,6 +1680,117 @@ def pay_loan_schedule_item(
     store_idempotent(db, idempotency_key, request, output)
     db.commit()
     return output
+
+
+@router.post("/loans/{loan_id}/transactions/{transaction_id}/link")
+def link_existing_loan_transaction(
+    loan_id: int,
+    transaction_id: int,
+    body: LoanTransactionLink,
+    idempotency_key: str | None = Header(None),
+    _=Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    request = {"loan_id": loan_id, "transaction_id": transaction_id, **body.model_dump()}
+    prior = idempotent_existing(db, idempotency_key, request)
+    if prior:
+        return prior
+    loan = db.get(Loan, loan_id)
+    transaction = db.get(Transaction, transaction_id)
+    if not loan:
+        missing("Loan")
+    if not transaction:
+        missing("Transaction")
+    if (
+        loan.archived
+        or transaction.type != "expense"
+        or transaction.loan_id is not None
+        or transaction.goal_id is not None
+    ):
+        raise HTTPException(status_code=409, detail="Платёж нельзя связать с этим кредитом")
+    if transaction.external_source and transaction.external_source.startswith("loan_schedule:"):
+        raise HTTPException(status_code=409, detail="Платёж уже относится к графику кредита")
+    principal_part = body.principal_minor or 0
+    interest_part = body.interest_minor or 0
+    if principal_part + interest_part > transaction.amount_minor:
+        raise HTTPException(status_code=422, detail="Долг и проценты превышают сумму платежа")
+    if body.already_reflected_in_balance and body.prepayment_strategy:
+        raise HTTPException(
+            status_code=422,
+            detail="Пересчёт досрочного погашения доступен только для нового изменения долга",
+        )
+    if not body.already_reflected_in_balance:
+        ensure_open(db, transaction.date)
+        if body.principal_minor is None:
+            raise HTTPException(status_code=422, detail="Укажите часть платежа в основной долг")
+        if (
+            loan.schedule_mode != "auto"
+            or loan.principal_minor is None
+            or loan.principal_as_of is None
+        ):
+            raise HTTPException(status_code=422, detail="Автоматический расчёт кредита не настроен")
+        if transaction.date < loan.principal_as_of or principal_part > loan.principal_minor:
+            raise HTTPException(
+                status_code=409,
+                detail="Дата платежа или погашение долга не согласуется с текущим остатком",
+            )
+        loan.principal_minor -= principal_part
+        loan.principal_as_of = transaction.date
+        if body.prepayment_strategy == "reduce_payment" and loan.principal_minor:
+            dates = monthly_dates(loan.first_payment_date, loan.end_date, transaction.date)
+            loan.annuity_payment_minor = annuity_payment(
+                loan.principal_minor,
+                loan.annual_rate_bps,
+                loan.interest_method,
+                transaction.date,
+                dates,
+            )
+        if loan.principal_minor == 0:
+            loan.annuity_payment_minor = 0
+        loan.version += 1
+    transaction.loan_id = loan_id
+    transaction.principal_component_minor = body.principal_minor
+    transaction.interest_component_minor = body.interest_minor
+    transaction.prepayment_strategy = body.prepayment_strategy
+    transaction.loan_balance_applied = not body.already_reflected_in_balance
+    transaction.version += 1
+    output = {
+        "transaction_id": transaction.id,
+        "loan_id": loan.id,
+        "principal_component_minor": transaction.principal_component_minor,
+        "interest_component_minor": transaction.interest_component_minor,
+        "loan_principal_minor": loan.principal_minor,
+    }
+    store_idempotent(db, idempotency_key, request, output)
+    db.commit()
+    return output
+
+
+@router.delete("/loans/{loan_id}/transactions/{transaction_id}/link", status_code=204)
+def unlink_historical_loan_transaction(
+    loan_id: int,
+    transaction_id: int,
+    version: int = Query(ge=1),
+    _=Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> Response:
+    transaction = db.get(Transaction, transaction_id)
+    if not transaction or transaction.loan_id != loan_id:
+        missing("Loan payment link")
+    ensure_version(transaction, version)
+    if transaction.loan_balance_applied is not False:
+        raise HTTPException(
+            status_code=409,
+            detail="Этот платёж изменил остаток долга; связь нельзя удалить отдельно",
+        )
+    transaction.loan_id = None
+    transaction.principal_component_minor = None
+    transaction.interest_component_minor = None
+    transaction.prepayment_strategy = None
+    transaction.loan_balance_applied = None
+    transaction.version += 1
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/months/{month}/close")

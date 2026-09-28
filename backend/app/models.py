@@ -118,6 +118,11 @@ class Transaction(Base, TimestampVersionMixin):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), index=True)
     goal_id: Mapped[int | None] = mapped_column(ForeignKey("goals.id"), index=True)
+    loan_id: Mapped[int | None] = mapped_column(ForeignKey("loans.id"), index=True)
+    principal_component_minor: Mapped[int | None] = mapped_column(Integer)
+    interest_component_minor: Mapped[int | None] = mapped_column(Integer)
+    prepayment_strategy: Mapped[str | None] = mapped_column(String(24))
+    loan_balance_applied: Mapped[bool | None] = mapped_column(Boolean)
     description: Mapped[str] = mapped_column(String(300), default="")
     comment: Mapped[str | None] = mapped_column(Text)
     external_source: Mapped[str | None] = mapped_column(String(80))
@@ -173,6 +178,7 @@ class PlanItem(Base, TimestampVersionMixin):
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
     goal_id: Mapped[int | None] = mapped_column(ForeignKey("goals.id"))
+    loan_id: Mapped[int | None] = mapped_column(ForeignKey("loans.id"), index=True)
     funding_source: Mapped[str] = mapped_column(String(16), default="free")
     required: Mapped[bool] = mapped_column(Boolean, default=False)
     comment: Mapped[str | None] = mapped_column(Text)
@@ -254,6 +260,15 @@ class Loan(Base, TimestampVersionMixin):
     creditor: Mapped[str | None] = mapped_column(String(160))
     principal_minor: Mapped[int | None] = mapped_column(Integer)
     principal_as_of: Mapped[date | None] = mapped_column(Date)
+    annual_rate_bps: Mapped[int | None] = mapped_column(Integer)
+    interest_method: Mapped[str] = mapped_column(
+        String(16), default="simple", server_default="simple"
+    )
+    schedule_mode: Mapped[str] = mapped_column(
+        String(16), default="manual", server_default="manual"
+    )
+    first_payment_date: Mapped[date | None] = mapped_column(Date)
+    annuity_payment_minor: Mapped[int | None] = mapped_column(Integer)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)

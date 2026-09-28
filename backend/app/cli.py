@@ -8,13 +8,14 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, select
 
 from .api.io import create_backup
 from .config import config
 from .db import SessionLocal, engine
 from .models import SessionToken, User
-from .migrations import migrate
+from .migrations import alembic_config, migrate
 from .security import hash_password
 
 
@@ -61,7 +62,13 @@ def restore(path: Path) -> None:
             revision = check.execute("SELECT version_num FROM alembic_version").fetchone()
         except sqlite3.DatabaseError as exc:
             raise SystemExit("Неизвестная схема резервной копии") from exc
-        if not revision or revision[0] != "0001":
+        known_revisions = {
+            item.revision
+            for item in ScriptDirectory.from_config(alembic_config()).iterate_revisions(
+                "head", "base"
+            )
+        }
+        if not revision or revision[0] not in known_revisions:
             raise SystemExit("Несовместимая версия схемы резервной копии")
     current = create_backup() if config.database_path.exists() else None
     engine.dispose()

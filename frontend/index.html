@@ -13,6 +13,10 @@
           const colorScheme = ['forest', 'ocean', 'plum', 'amber'].includes(savedColorScheme)
             ? savedColorScheme
             : 'forest'
+          const savedFont = localStorage.getItem('budget-planner-font')
+          document.documentElement.dataset.font = ['classic', 'golos'].includes(savedFont)
+            ? savedFont
+            : 'classic'
           const systemDark = typeof matchMedia === 'function'
             && matchMedia('(prefers-color-scheme: dark)').matches
           const theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
@@ -26,6 +30,7 @@
         } catch {
           document.documentElement.dataset.theme = 'light'
           document.documentElement.dataset.colorScheme = 'forest'
+          document.documentElement.dataset.font = 'classic'
           document.documentElement.style.colorScheme = 'light'
         }
       })()

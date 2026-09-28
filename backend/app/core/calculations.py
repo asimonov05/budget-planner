@@ -16,12 +16,14 @@ from ..models import (
     BudgetMonth,
     Goal,
     GoalReserveMovement,
+    Loan,
     LoanScheduleItem,
     PlanItem,
     PlanMatch,
     PlanOverride,
     Transaction,
 )
+from .loans import PaymentRow, monthly_dates, project_loan
 
 
 def month_key(value: date) -> str:
@@ -218,8 +220,41 @@ def calculate_forecast(
     c, r = 0, 0
     introduced_accounts: set[int] = set()
     loan_items_by_month: dict[str, list[LoanScheduleItem]] = defaultdict(list)
+    manual_loan_months: set[tuple[int, str]] = set()
     for loan_item in db.scalars(select(LoanScheduleItem)).all():
-        loan_items_by_month[month_key(loan_item.due_date)].append(loan_item)
+        due_month = month_key(loan_item.due_date)
+        loan_items_by_month[due_month].append(loan_item)
+        if loan_item.status != "cancelled":
+            manual_loan_months.add((loan_item.loan_id, due_month))
+    auto_loan_rows_by_month: dict[str, list[tuple[int, PaymentRow]]] = defaultdict(list)
+    auto_loan_ids: set[int] = set()
+    archived_loan_ids: set[int] = set()
+    for loan in db.scalars(select(Loan)).all():
+        if loan.archived:
+            archived_loan_ids.add(loan.id)
+            continue
+        if loan.schedule_mode != "auto":
+            continue
+        auto_loan_ids.add(loan.id)
+        if (
+            not loan.principal_minor
+            or loan.principal_as_of is None
+            or loan.annual_rate_bps is None
+            or loan.first_payment_date is None
+            or loan.end_date is None
+        ):
+            continue
+        due_dates = monthly_dates(loan.first_payment_date, loan.end_date, loan.principal_as_of)
+        projection = project_loan(
+            loan.principal_minor,
+            loan.annual_rate_bps,
+            loan.interest_method,
+            loan.principal_as_of,
+            due_dates,
+            regular_payment_minor=loan.annuity_payment_minor,
+        )
+        for row in projection.rows:
+            auto_loan_rows_by_month[month_key(row.due_date)].append((loan.id, row))
     results: list[MonthResult] = []
 
     for month in timeline:
@@ -274,6 +309,19 @@ def calculate_forecast(
                 result.goal_refunds += movement.amount_minor
 
         if month not in closed:
+            for loan_id, row in auto_loan_rows_by_month.get(month, []):
+                result.expense += row.payment_minor
+                result.expected_expense += row.payment_minor
+                result.details.append(
+                    {
+                        "source": "loan_projection",
+                        "loan_id": loan_id,
+                        "kind": "expense",
+                        "amount_minor": row.payment_minor,
+                        "interest_minor": row.interest_minor,
+                        "principal_minor": row.principal_minor,
+                    }
+                )
             for item in loan_items_by_month.get(month, []):
                 if item.status in ("paid", "cancelled"):
                     continue
@@ -289,6 +337,12 @@ def calculate_forecast(
                     }
                 )
             for item in plan_items:
+                if item.loan_id is not None and (
+                    item.loan_id in auto_loan_ids
+                    or item.loan_id in archived_loan_ids
+                    or (item.loan_id, month) in manual_loan_months
+                ):
+                    continue
                 if item.certainty == "possible" and not include_possible:
                     continue
                 for nominal_month, amount, effective_date in projected_plan_occurrences(

@@ -52,12 +52,23 @@ def login(
         max_age=config.session_days * 86400,
         path="/",
     )
-    return {"user": {"id": user.id, "username": user.username}, "csrf_token": csrf}
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "debug_admin_enabled": config.debug_admin_enabled,
+        },
+        "csrf_token": csrf,
+    }
 
 
 @router.get("/me")
 def me(auth: tuple[User, SessionToken] = Depends(current_session)) -> dict:
-    return {"id": auth[0].id, "username": auth[0].username}
+    return {
+        "id": auth[0].id,
+        "username": auth[0].username,
+        "debug_admin_enabled": config.debug_admin_enabled,
+    }
 
 
 @router.post("/logout")

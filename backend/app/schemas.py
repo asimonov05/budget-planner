@@ -105,6 +105,8 @@ class TransactionCreate(BaseModel):
     account_id: int
     category_id: int | None = None
     goal_id: int | None = None
+    loan_id: int | None = Field(None, ge=1)
+    prepayment_strategy: Literal["reduce_term", "reduce_payment"] | None = None
     description: str = Field(default="", max_length=300)
     comment: str | None = Field(None, max_length=4000)
     tag_ids: list[int] = Field(default_factory=list)
@@ -146,6 +148,11 @@ class TransactionOut(ORMModel):
     account_id: int
     category_id: int | None
     goal_id: int | None
+    loan_id: int | None
+    principal_component_minor: int | None
+    interest_component_minor: int | None
+    prepayment_strategy: str | None
+    loan_balance_applied: bool | None
     description: str
     comment: str | None
     external_source: str | None
@@ -203,6 +210,7 @@ class PlanItemCreate(BaseModel):
     account_id: int | None = None
     category_id: int | None = None
     goal_id: int | None = None
+    loan_id: int | None = Field(None, ge=1)
     funding_source: Literal["free", "goal"] = "free"
     required: bool = False
     comment: str | None = Field(None, max_length=4000)
@@ -216,6 +224,8 @@ class PlanItemCreate(BaseModel):
             raise ValueError("recurring plan item requires start_date or date")
         if self.funding_source == "goal" and not self.goal_id:
             raise ValueError("goal funding requires goal_id")
+        if self.loan_id and (self.kind != "expense" or self.goal_id):
+            raise ValueError("loan payment must be an expense outside goals")
         return self
 
 
@@ -227,6 +237,7 @@ class PlanItemUpdate(VersionedUpdate):
     status: Literal["planned", "fulfilled", "cancelled"] | None = None
     account_id: int | None = None
     category_id: int | None = None
+    loan_id: int | None = Field(None, ge=1)
     comment: str | None = Field(None, max_length=4000)
     tag_ids: list[int] | None = None
 
@@ -246,6 +257,7 @@ class PlanItemOut(ORMModel):
     account_id: int | None
     category_id: int | None
     goal_id: int | None
+    loan_id: int | None
     funding_source: str
     required: bool
     comment: str | None
@@ -353,6 +365,10 @@ class LoanCreate(BaseModel):
     creditor: str | None = Field(None, max_length=160)
     principal_minor: int | None = Field(None, ge=0, le=MAX_SAFE_INTEGER)
     principal_as_of: DateType | None = None
+    annual_rate_bps: int | None = Field(None, ge=0, le=100_000)
+    interest_method: Literal["simple", "compound"] = "simple"
+    schedule_mode: Literal["manual", "auto"] = "manual"
+    first_payment_date: DateType | None = None
     account_id: int | None = None
     start_date: DateType | None = None
     end_date: DateType | None = None
@@ -364,6 +380,10 @@ class LoanUpdate(VersionedUpdate):
     creditor: str | None = Field(None, max_length=160)
     principal_minor: int | None = Field(None, ge=0, le=MAX_SAFE_INTEGER)
     principal_as_of: DateType | None = None
+    annual_rate_bps: int | None = Field(None, ge=0, le=100_000)
+    interest_method: Literal["simple", "compound"] | None = None
+    schedule_mode: Literal["manual", "auto"] | None = None
+    first_payment_date: DateType | None = None
     account_id: int | None = Field(None, ge=1)
     start_date: DateType | None = None
     end_date: DateType | None = None
@@ -377,6 +397,11 @@ class LoanOut(ORMModel):
     creditor: str | None
     principal_minor: int | None
     principal_as_of: DateType | None
+    annual_rate_bps: int | None
+    interest_method: str
+    schedule_mode: str
+    first_payment_date: DateType | None
+    annuity_payment_minor: int | None
     account_id: int | None
     start_date: DateType | None
     end_date: DateType | None
@@ -422,6 +447,13 @@ class LoanPaymentCreate(BaseModel):
         if (self.principal_minor or 0) + (self.interest_minor or 0) > self.amount_minor:
             raise ValueError("principal and interest cannot exceed the actual payment")
         return self
+
+
+class LoanTransactionLink(BaseModel):
+    principal_minor: int | None = Field(None, ge=0, le=MAX_SAFE_INTEGER)
+    interest_minor: int | None = Field(None, ge=0, le=MAX_SAFE_INTEGER)
+    already_reflected_in_balance: bool = True
+    prepayment_strategy: Literal["reduce_term", "reduce_payment"] | None = None
 
 
 class LoanScheduleOut(ORMModel):

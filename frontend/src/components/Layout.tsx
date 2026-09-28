@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  BarChart3, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, LayoutDashboard,
+  BarChart3, Bug, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, LayoutDashboard,
   LogOut, Menu, PanelLeftClose, PiggyBank, ReceiptText, Settings, TableProperties, WalletCards, X,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import type { User } from '../lib/types'
 
 const navigation = [
   { to: '/', label: 'Обзор', icon: LayoutDashboard, end: true },
@@ -25,11 +26,15 @@ export function Layout() {
   const [compact, setCompact] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate(); const queryClient = useQueryClient()
+  const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api<User>('/auth/me') })
   const logout = useMutation({ mutationFn: () => api('/auth/logout', { method: 'POST' }), onSuccess: () => { queryClient.clear(); navigate('/login') } })
+  const visibleNavigation = me.data?.debug_admin_enabled
+    ? [...navigation, { to: '/admin/debug', label: 'Админка · debug', icon: Bug }]
+    : navigation
   return <div className={`app-shell ${compact ? 'is-compact' : ''}`}>
     <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
       <div className="brand"><div className="brand-mark">К</div><div className="brand-copy"><strong>Контур</strong><span>Личный бюджет</span></div><button className="mobile-close icon-button" onClick={() => setMobileOpen(false)}><X /></button></div>
-      <nav aria-label="Основное меню">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}</nav>
+      <nav aria-label="Основное меню">{visibleNavigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}</nav>
       <div className="sidebar-bottom">
         <button className="sidebar-action" onClick={() => setCompact((v) => !v)}>{compact ? <ChevronRight /> : <PanelLeftClose />}<span>Свернуть</span></button>
         <button className="sidebar-action" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut/><span>Выйти</span></button>
