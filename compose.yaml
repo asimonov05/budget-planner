@@ -1,0 +1,51 @@
+name: budget-planner
+
+services:
+  app:
+    image: "budget-planner:${APP_IMAGE_TAG:-local}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${APP_PORT:-8082}:8000"
+    environment:
+      DATABASE_PATH: /data/budget.sqlite3
+      BACKUP_DIR: /backups
+      STATIC_DIR: /app/static
+      REQUIRE_SAFE_SQLITE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      TRUSTED_HOSTS: "${TRUSTED_HOSTS:-127.0.0.1,localhost}"
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-0}"
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    volumes:
+      - budget_data:/data
+      - budget_backups:/backups
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  budget_data:
+  budget_backups:

@@ -1,0 +1,4 @@
+goal;date;amount;account;external_id;comment
+Отпуск 2027;2026-10-15;20000,00;Основная карта;vacation-contribution-2026-10;
+Отпуск 2027;2026-11-15;20000,00;Основная карта;vacation-contribution-2026-11;
+Новый ноутбук;2026-10-20;15000,00;Накопительный счет;laptop-contribution-2026-10;Ручной взнос

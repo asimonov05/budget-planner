@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f7f2" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('budget-planner-theme')
+          const preference = ['light', 'dark', 'system'].includes(saved) ? saved : 'system'
+          const savedColorScheme = localStorage.getItem('budget-planner-color-scheme')
+          const colorScheme = ['forest', 'ocean', 'plum', 'amber'].includes(savedColorScheme)
+            ? savedColorScheme
+            : 'forest'
+          const systemDark = typeof matchMedia === 'function'
+            && matchMedia('(prefers-color-scheme: dark)').matches
+          const theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
+          document.documentElement.dataset.theme = theme
+          document.documentElement.dataset.colorScheme = colorScheme
+          document.documentElement.style.colorScheme = theme
+          document.querySelector('meta[name="theme-color"]')?.setAttribute(
+            'content',
+            theme === 'dark' ? '#151c18' : '#f5f4ee',
+          )
+        } catch {
+          document.documentElement.dataset.theme = 'light'
+          document.documentElement.dataset.colorScheme = 'forest'
+          document.documentElement.style.colorScheme = 'light'
+        }
+      })()
+    </script>
+    <title>Контур — личный бюджет</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

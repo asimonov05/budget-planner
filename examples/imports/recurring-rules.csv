@@ -1,0 +1,4 @@
+name;type;amount;frequency;start_date;end_date;day_of_month;account;category;tags;certainty;mandatory;group_external_id;payment_number;external_id
+Зарплата часть 1;income;50000,00;monthly;2026-10-10;;10;Основная карта;Зарплата;работа;confirmed;false;salary-main;1;salary-main-part-1
+Зарплата часть 2;income;70000,00;monthly;2026-10-25;;25;Основная карта;Зарплата;работа;confirmed;false;salary-main;2;salary-main-part-2
+Страховка;expense;18000,00;yearly;2026-12-31;;31;Основная карта;Авто;машина;confirmed;true;;1;insurance-yearly

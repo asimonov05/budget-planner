@@ -1,0 +1,4 @@
+kind;title;amount;date;month;recurrence;start_date;end_date;certainty;category;account_id
+income;Подработка;25000,00;;2026-11;none;;;confirmed;Подработка;
+expense;Замена масла;8000,00;2026-11-15;2026-11;none;;;confirmed;Авто;
+expense;Страховка;18000,00;;;yearly;2026-12-31;2028-12-31;confirmed;Авто;

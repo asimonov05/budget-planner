@@ -1,0 +1,424 @@
+from __future__ import annotations
+
+import calendar
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import date
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..models import (
+    Account,
+    AppSettings,
+    BudgetLimit,
+    BudgetLimitOverride,
+    BudgetMonth,
+    Goal,
+    GoalReserveMovement,
+    LoanScheduleItem,
+    PlanItem,
+    PlanMatch,
+    PlanOverride,
+    Transaction,
+)
+
+
+def month_key(value: date) -> str:
+    return value.strftime("%Y-%m")
+
+
+def add_months(value: str, count: int) -> str:
+    year, month = map(int, value.split("-"))
+    total = year * 12 + month - 1 + count
+    return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
+def occurrence_date(item: PlanItem, month: str) -> date | None:
+    base = item.start_date or item.date
+    if not base:
+        return None
+    year, month_num = map(int, month.split("-"))
+    day = min(base.day, calendar.monthrange(year, month_num)[1])
+    return date(year, month_num, day)
+
+
+def occurs_in_month(item: PlanItem, month: str) -> bool:
+    if item.status == "cancelled":
+        return False
+    if item.recurrence == "none":
+        return (month_key(item.date) if item.date else item.month) == month
+    current = occurrence_date(item, month)
+    base = item.start_date or item.date
+    if not current or not base or current < base:
+        return False
+    if item.end_date and current > item.end_date:
+        return False
+    if item.recurrence == "yearly" and current.month != base.month:
+        return False
+    return True
+
+
+def effective_plan_amount(
+    item: PlanItem, month: str, overrides: dict[tuple[int, str], PlanOverride]
+) -> int | None:
+    if not occurs_in_month(item, month):
+        return None
+    override = overrides.get((item.id, month))
+    if override:
+        if override.cancelled:
+            return None
+        if override.amount_minor is not None:
+            return override.amount_minor
+    return item.amount_minor
+
+
+def projected_plan_occurrences(
+    item: PlanItem,
+    calendar_month: str,
+    overrides: dict[tuple[int, str], PlanOverride],
+) -> list[tuple[str, int, date | None]]:
+    """Return nominal occurrences whose effective date falls in a calendar month.
+
+    Matching remains anchored to the nominal month, so moving an occurrence
+    across a month boundary neither loses its identity nor creates a duplicate
+    alongside the destination month's regular occurrence.
+    """
+    nominal_months = {calendar_month}
+    nominal_months.update(
+        nominal_month
+        for (plan_item_id, nominal_month), override in overrides.items()
+        if plan_item_id == item.id
+        and override.moved_date is not None
+        and month_key(override.moved_date) == calendar_month
+    )
+    result = []
+    for nominal_month in sorted(nominal_months):
+        amount = effective_plan_amount(item, nominal_month, overrides)
+        if amount is None:
+            continue
+        override = overrides.get((item.id, nominal_month))
+        effective_date = (
+            override.moved_date
+            if override and override.moved_date
+            else occurrence_date(item, nominal_month)
+        )
+        effective_month = month_key(effective_date) if effective_date else nominal_month
+        if effective_month != calendar_month:
+            continue
+        result.append((nominal_month, amount, effective_date))
+    return result
+
+
+@dataclass
+class CategoryDetail:
+    category_id: int
+    actual_minor: int = 0
+    expected_remaining_minor: int = 0
+    limit_minor: int | None = None
+    unallocated_minor: int = 0
+    forecast_minor: int = 0
+    exceeded_minor: int = 0
+
+
+@dataclass
+class MonthResult:
+    month: str
+    c_start: int
+    r_start: int
+    f_start: int
+    income: int = 0
+    expense: int = 0
+    actual_income: int = 0
+    actual_expense: int = 0
+    expected_income: int = 0
+    expected_expense: int = 0
+    goal_allocations: int = 0
+    goal_releases: int = 0
+    goal_expenses: int = 0
+    goal_refunds: int = 0
+    adjustments: int = 0
+    c_end: int = 0
+    r_end: int = 0
+    f_end: int = 0
+    incomplete: bool = False
+    closed: bool = False
+    category_details: list[dict] = field(default_factory=list)
+    details: list[dict] = field(default_factory=list)
+
+
+def calculate_forecast(
+    db: Session, from_month: str, months: int, include_possible: bool = False
+) -> dict:
+    requested = [add_months(from_month, i) for i in range(months)]
+    accounts = db.scalars(select(Account)).all()
+    if not accounts:
+        return {"from_month": from_month, "months": [], "warnings": ["no_accounts"]}
+    settings = db.get(AppSettings, 1)
+    reserve_start_month = (
+        month_key(settings.accounting_start_date)
+        if settings
+        else min(month_key(account.initial_balance_date) for account in accounts)
+    )
+    first_month = min(
+        min(month_key(account.initial_balance_date) for account in accounts),
+        reserve_start_month,
+        from_month,
+    )
+    through = requested[-1]
+    timeline: list[str] = []
+    current = first_month
+    while current <= through:
+        timeline.append(current)
+        current = add_months(current, 1)
+
+    transaction_month = func.strftime("%Y-%m", Transaction.date).label("month")
+    transaction_rows = db.execute(
+        select(
+            transaction_month,
+            Transaction.type,
+            Transaction.category_id,
+            Transaction.goal_id,
+            func.sum(Transaction.amount_minor).label("amount_minor"),
+            func.count(Transaction.id).label("transaction_count"),
+        )
+        .where(
+            Transaction.date >= date.fromisoformat(f"{first_month}-01"),
+            Transaction.date < date.fromisoformat(f"{add_months(through, 1)}-01"),
+        )
+        .group_by(
+            transaction_month,
+            Transaction.type,
+            Transaction.category_id,
+            Transaction.goal_id,
+        )
+    ).all()
+    transactions_by_month: dict[str, list] = defaultdict(list)
+    for transaction in transaction_rows:
+        transactions_by_month[transaction.month].append(transaction)
+    plan_items = db.scalars(select(PlanItem)).all()
+    overrides = {(o.plan_item_id, o.month): o for o in db.scalars(select(PlanOverride)).all()}
+    matches_by_occurrence: dict[tuple[int, str], list[PlanMatch]] = defaultdict(list)
+    for match in db.scalars(select(PlanMatch)).all():
+        matches_by_occurrence[(match.plan_item_id, match.occurrence_month)].append(match)
+    limits = db.scalars(select(BudgetLimit)).all()
+    limit_overrides = {
+        (o.budget_limit_id, o.month): o.amount_minor
+        for o in db.scalars(select(BudgetLimitOverride)).all()
+    }
+    movements_by_month: dict[str, list[GoalReserveMovement]] = defaultdict(list)
+    for movement in db.scalars(select(GoalReserveMovement)).all():
+        movements_by_month[month_key(movement.date)].append(movement)
+    goals = db.scalars(select(Goal)).all()
+    closed = {
+        m.month for m in db.scalars(select(BudgetMonth).where(BudgetMonth.status == "closed")).all()
+    }
+
+    initial_r = sum(g.initial_reserved_minor for g in goals)
+    c, r = 0, 0
+    introduced_accounts: set[int] = set()
+    loan_items_by_month: dict[str, list[LoanScheduleItem]] = defaultdict(list)
+    for loan_item in db.scalars(select(LoanScheduleItem)).all():
+        loan_items_by_month[month_key(loan_item.due_date)].append(loan_item)
+    results: list[MonthResult] = []
+
+    for month in timeline:
+        if month == reserve_start_month:
+            r += initial_r
+        for account in accounts:
+            if (
+                account.id not in introduced_accounts
+                and month_key(account.initial_balance_date) == month
+            ):
+                c += account.initial_balance_minor
+                introduced_accounts.add(account.id)
+        result = MonthResult(
+            month=month, c_start=c, r_start=r, f_start=c - r, closed=month in closed
+        )
+        category_actual: dict[int, int] = defaultdict(int)
+        category_expected: dict[int, int] = defaultdict(int)
+
+        for tx in transactions_by_month.get(month, []):
+            if tx.type == "income":
+                result.income += tx.amount_minor
+                result.actual_income += tx.amount_minor
+                result.details.append(
+                    {
+                        "source": "transactions",
+                        "kind": "income",
+                        "amount_minor": tx.amount_minor,
+                        "count": tx.transaction_count,
+                    }
+                )
+            elif tx.type == "expense":
+                result.expense += tx.amount_minor
+                result.actual_expense += tx.amount_minor
+                if tx.goal_id is None and tx.category_id:
+                    category_actual[tx.category_id] += tx.amount_minor
+            elif tx.type == "refund":
+                result.expense -= tx.amount_minor
+                result.actual_expense -= tx.amount_minor
+                if tx.goal_id is None and tx.category_id:
+                    category_actual[tx.category_id] -= tx.amount_minor
+            elif tx.type == "adjustment":
+                result.adjustments += tx.amount_minor
+
+        for movement in movements_by_month.get(month, []):
+            if movement.kind == "allocation":
+                result.goal_allocations += movement.amount_minor
+            elif movement.kind == "release":
+                result.goal_releases += movement.amount_minor
+            elif movement.kind == "expense":
+                result.goal_expenses += movement.amount_minor
+            elif movement.kind == "refund":
+                result.goal_refunds += movement.amount_minor
+
+        if month not in closed:
+            for item in loan_items_by_month.get(month, []):
+                if item.status in ("paid", "cancelled"):
+                    continue
+                remaining = max(0, item.amount_minor - item.paid_minor)
+                result.expense += remaining
+                result.expected_expense += remaining
+                result.details.append(
+                    {
+                        "source": "loan_schedule",
+                        "id": item.id,
+                        "kind": "expense",
+                        "amount_minor": remaining,
+                    }
+                )
+            for item in plan_items:
+                if item.certainty == "possible" and not include_possible:
+                    continue
+                for nominal_month, amount, effective_date in projected_plan_occurrences(
+                    item, month, overrides
+                ):
+                    item_matches = matches_by_occurrence[(item.id, nominal_month)]
+                    completed = (
+                        any(match.completed for match in item_matches) or item.status == "fulfilled"
+                    )
+                    matched = sum(match.amount_minor for match in item_matches)
+                    remaining = 0 if completed else max(0, amount - matched)
+                    if not remaining:
+                        continue
+                    if item.kind == "income":
+                        result.income += remaining
+                        result.expected_income += remaining
+                    elif item.funding_source == "goal":
+                        result.expense += remaining
+                        result.expected_expense += remaining
+                        result.goal_expenses += remaining
+                    else:
+                        if item.category_id:
+                            category_expected[item.category_id] += remaining
+                        else:
+                            result.expense += remaining
+                            result.expected_expense += remaining
+                    if effective_date is None:
+                        result.incomplete = True
+                    if item.account_id is None:
+                        result.incomplete = True
+                    result.details.append(
+                        {
+                            "source": "plan_item",
+                            "id": item.id,
+                            "occurrence_month": nominal_month,
+                            "kind": item.kind,
+                            "amount_minor": remaining,
+                        }
+                    )
+
+            category_ids = set(category_actual) | set(category_expected)
+            for limit in limits:
+                if limit.start_month <= month and (not limit.end_month or month <= limit.end_month):
+                    category_ids.add(limit.category_id)
+            for category_id in sorted(category_ids):
+                actual = category_actual[category_id]
+                expected = category_expected[category_id]
+                applicable = [
+                    x
+                    for x in limits
+                    if x.category_id == category_id
+                    and x.start_month <= month
+                    and (not x.end_month or month <= x.end_month)
+                ]
+                effective_limit = None
+                if applicable:
+                    chosen = max(applicable, key=lambda x: x.start_month)
+                    effective_limit = limit_overrides.get((chosen.id, month), chosen.amount_minor)
+                unallocated = (
+                    max(0, (effective_limit or 0) - actual - expected)
+                    if effective_limit is not None
+                    else 0
+                )
+                forecast = actual + expected + unallocated
+                result.expense += expected + unallocated
+                result.expected_expense += expected + unallocated
+                result.category_details.append(
+                    CategoryDetail(
+                        category_id=category_id,
+                        actual_minor=actual,
+                        expected_remaining_minor=expected,
+                        limit_minor=effective_limit,
+                        unallocated_minor=unallocated,
+                        forecast_minor=forecast,
+                        exceeded_minor=max(0, forecast - effective_limit)
+                        if effective_limit is not None
+                        else 0,
+                    ).__dict__
+                )
+
+        result.c_end = result.c_start + result.income - result.expense + result.adjustments
+        result.r_end = (
+            result.r_start
+            + result.goal_allocations
+            - result.goal_releases
+            - result.goal_expenses
+            + result.goal_refunds
+        )
+        result.f_end = result.c_end - result.r_end
+        c, r = result.c_end, result.r_end
+        if month in requested:
+            results.append(result)
+
+    warnings: list[str] = []
+    if any(x.c_end < 0 for x in results):
+        warnings.append("negative_cash")
+    if any(x.r_end < 0 for x in results):
+        warnings.append("negative_reserve")
+    return {"from_month": from_month, "months": [x.__dict__ for x in results], "warnings": warnings}
+
+
+def goal_reserved(db: Session, goal: Goal, through: date | None = None) -> int:
+    movements = db.scalars(
+        select(GoalReserveMovement).where(GoalReserveMovement.goal_id == goal.id)
+    ).all()
+    result = goal.initial_reserved_minor
+    for movement in movements:
+        if through and movement.date > through:
+            continue
+        result += (
+            movement.amount_minor
+            if movement.kind in ("allocation", "refund")
+            else -movement.amount_minor
+        )
+    return result
+
+
+def goal_remaining_need(db: Session, goal: Goal) -> int:
+    spent = sum(
+        m.amount_minor if m.kind == "expense" else -m.amount_minor
+        for m in db.scalars(
+            select(GoalReserveMovement).where(GoalReserveMovement.goal_id == goal.id)
+        ).all()
+        if m.kind in ("expense", "refund")
+    )
+    return max(0, goal.target_amount_minor - spent - goal_reserved(db, goal))
+
+
+def split_evenly(amount_minor: int, count: int) -> list[int]:
+    if count <= 0:
+        return []
+    quotient, remainder = divmod(amount_minor, count)
+    return [quotient + (1 if i < remainder else 0) for i in range(count)]

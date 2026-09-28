@@ -1,0 +1,170 @@
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Archive, CheckCircle2, CirclePlus, DatabaseBackup, Download, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
+import { ApiError, api, asList, download, jsonBody, queryString } from '../lib/api'
+import { formatMoney, parseMoney, todayISO } from '../lib/format'
+import { useTheme, type ColorScheme, type ThemePreference } from '../lib/theme'
+import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
+import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
+
+type Tab = 'general'|'appearance'|'accounts'|'categories'|'tags'|'backups'
+interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; version: number }
+interface Backup { name: string; created_at: string; size: number }
+type DirectoryKind = 'accounts'|'categories'|'tags'
+type DirectoryItem = Account|Category|Tag
+
+function itemVersion(item: DirectoryItem) { return item.version ?? 1 }
+function actionError(error: Error | null) {
+  if (!error) return null
+  return error instanceof ApiError && error.status === 409
+    ? `${error.message}. Обновите список и повторите действие.`
+    : error.message
+}
+
+export function SettingsPage() {
+  const [tab, setTab] = useState<Tab>('general')
+  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, оформление, справочники и физические резервные копии."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button><button className={tab==='backups'?'active':''} onClick={() => setTab('backups')}><DatabaseBackup/> Резервные копии</button></aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'backups' && <Backups/>}</section></div></div>
+}
+
+function GeneralSettings() {
+  const client = useQueryClient(); const settings = useQuery<Settings>({ queryKey: ['settings'], queryFn: () => api('/settings') })
+  const [draft, setDraft] = useState<Settings|null>(null); const value = draft ?? settings.data
+  const save = useMutation({ mutationFn: () => api('/settings', { method: 'PATCH', body: jsonBody({ currency: value?.currency, timezone: value?.timezone, accounting_start_date: value?.accounting_start_date, version: value?.version }) }), onSuccess: () => { client.invalidateQueries({ queryKey: ['settings'] }); setDraft(null) } })
+  if (settings.isLoading) return <State kind="loading" title="Загружаем настройки"/>; if (!value) return <State kind="error" title="Настройки недоступны"/>
+  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Бюджет</span><h2>Основные параметры</h2></div></div><div className="form-grid"><Field label="Валюта" hint="Нельзя просто переименовать суммы после начала учёта"><Select value={value.currency} onChange={(e) => setDraft({...value,currency:e.target.value})}><option value="RUB">RUB — российский рубль</option></Select></Field><Field label="Часовой пояс"><Input value={value.timezone} onChange={(e) => setDraft({...value,timezone:e.target.value})}/></Field><Field label="Дата начала учёта"><Input type="date" value={value.accounting_start_date ?? ''} onChange={(e) => setDraft({...value,accounting_start_date:e.target.value})}/></Field></div><div className="form-actions"><Button disabled={!draft || save.isPending} onClick={() => save.mutate()}>{save.isPending?'Сохраняем…':'Сохранить'}</Button></div>{save.isError && <div className="form-alert">{save.error.message}</div>}</Card>
+}
+
+const themeChoices: Array<{
+  value: ThemePreference
+  title: string
+  description: string
+  icon: typeof Sun
+}> = [
+  { value: 'light', title: 'Светлая', description: 'Светлый фон и спокойные контрастные поверхности.', icon: Sun },
+  { value: 'dark', title: 'Тёмная', description: 'Меньше яркости вечером и в слабо освещённой комнате.', icon: Moon },
+  { value: 'system', title: 'Системная', description: 'Следует за настройкой macOS, Windows или браузера.', icon: Monitor },
+]
+
+const colorSchemeChoices: Array<{
+  value: ColorScheme
+  title: string
+  description: string
+}> = [
+  { value: 'forest', title: 'Лес', description: 'Спокойный зелёный — базовая палитра.' },
+  { value: 'ocean', title: 'Океан', description: 'Холодные синие и бирюзовые оттенки.' },
+  { value: 'plum', title: 'Слива', description: 'Мягкий фиолетовый акцент.' },
+  { value: 'amber', title: 'Янтарь', description: 'Тёплые золотистые оттенки.' },
+]
+
+function AppearanceSettings() {
+  const { preference, resolvedTheme, colorScheme, setPreference, setColorScheme } = useTheme()
+  const activeColorScheme = colorSchemeChoices.find((choice) => choice.value === colorScheme)!
+  return <Card className="settings-card appearance-card">
+    <div className="section-head"><div><span className="eyebrow">Интерфейс</span><h2>Тема оформления</h2></div></div>
+    <p className="appearance-intro">Выбор применяется сразу и сохраняется только в этом браузере.</p>
+    <div className="appearance-options" role="radiogroup" aria-label="Тема интерфейса">
+      {themeChoices.map(({ value, title, description, icon: Icon }) => {
+        const selected = preference === value
+        return <label
+          key={value}
+          className={`theme-choice ${selected ? 'is-selected' : ''}`}
+        >
+          <input
+            className="theme-choice-input"
+            type="radio"
+            name="interface-theme"
+            value={value}
+            checked={selected}
+            onChange={() => setPreference(value)}
+          />
+          <span className={`theme-preview theme-preview--${value}`} aria-hidden="true"><i/><i/><i/></span>
+          <span className="theme-choice-copy"><span><Icon/>{title}</span><small>{description}</small></span>
+          <span className="theme-choice-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
+        </label>
+      })}
+    </div>
+    <div className="appearance-subsection"><span className="eyebrow">Акцент</span><h3>Цветовая схема</h3><p>Меняет акцентные цвета, фон навигации и оттенок поверхностей.</p></div>
+    <div className="color-scheme-options" role="radiogroup" aria-label="Цветовая схема">
+      {colorSchemeChoices.map(({ value, title, description }) => {
+        const selected = colorScheme === value
+        return <label key={value} className={`color-scheme-choice color-scheme-choice--${value} ${selected ? 'is-selected' : ''}`}>
+          <input
+            className="theme-choice-input"
+            type="radio"
+            name="interface-color-scheme"
+            value={value}
+            checked={selected}
+            onChange={() => setColorScheme(value)}
+          />
+          <span className="color-scheme-swatch" aria-hidden="true"><i/><i/><i/></span>
+          <span className="color-scheme-copy"><strong>{title}</strong><small>{description}</small></span>
+          <span className="color-scheme-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
+        </label>
+      })}
+    </div>
+    <div className="notice notice--calm appearance-status"><Palette/><div><strong>{activeColorScheme.title}: сейчас используется {resolvedTheme === 'dark' ? 'тёмная' : 'светлая'} палитра</strong><span>{preference === 'system' ? 'Яркость изменится автоматически вместе с системной темой.' : 'Автоматическое переключение яркости выключено.'}</span></div></div>
+  </Card>
+}
+
+function Directory({ kind }: { kind: DirectoryKind }) {
+  const [open,setOpen] = useState(false)
+  const [editing,setEditing] = useState<DirectoryItem|null>(null)
+  const client = useQueryClient()
+  const list = useQuery<DirectoryItem[]|ListResponse<DirectoryItem>>({ queryKey:[kind,'all'],queryFn:()=>api(`/${kind}?include_archived=true`) })
+  const state = useMutation<unknown,Error,{item:DirectoryItem;archived:boolean}>({
+    mutationFn:({item,archived})=>api(`/${kind}/${item.id}`,{method:'PATCH',body:jsonBody({archived,version:itemVersion(item)})}),
+    onSuccess:()=>client.invalidateQueries({queryKey:[kind]}),
+  })
+  const remove = useMutation<unknown,Error,DirectoryItem>({
+    mutationFn:(item)=>api(`/${kind}/${item.id}?${queryString({version:itemVersion(item)})}`,{method:'DELETE'}),
+    onSuccess:()=>client.invalidateQueries({queryKey:[kind]}),
+  })
+  const labels = {accounts:['Счета','счёт'],categories:['Категории','категорию'],tags:['Теги','тег']}[kind]
+  const error = actionError(state.error ?? remove.error)
+  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Справочник</span><h2>{labels[0]}</h2></div><Button onClick={()=>{state.reset();remove.reset();setEditing(null);setOpen(true)}}><CirclePlus/> Добавить</Button></div>
+    {error&&<div className="form-alert" role="alert">{error}</div>}
+    {list.isLoading?<State kind="loading" title="Загружаем"/>:list.isError?<State kind="error" title="Не удалось загрузить справочник">{list.error.message}</State>:asList(list.data).length?<div className="directory-list">{asList(list.data).map((item)=><div key={item.id}><span className="color-dot" style={{background:'color' in item ? item.color ?? '#557a5d' : '#557a5d'}}/><div><strong>{item.name}</strong><small>{'current_balance_minor' in item ? `${formatMoney(item.current_balance_minor)} · ${item.archived?'в архиве':'активен'}` : item.archived?'В архиве':'Активно'}</small></div>{item.archived&&<Badge>Архив</Badge>}<div className="directory-actions"><button className="icon-button" aria-label={`Изменить ${item.name}`} title="Изменить" onClick={()=>{state.reset();remove.reset();setOpen(false);setEditing(item)}}><Pencil/></button><button className="icon-button" aria-label={`${item.archived?'Восстановить':'Архивировать'} ${item.name}`} title={item.archived?'Восстановить':'Архивировать'} onClick={()=>{
+      state.reset();remove.reset()
+      if(item.archived||window.confirm(`Архивировать ${labels[1]} «${item.name}»? История сохранится.`))state.mutate({item,archived:!item.archived})
+    }}>{item.archived?<RotateCcw/>:<Archive/>}</button><button className="icon-button icon-button--danger" aria-label={`Удалить ${item.name}`} title="Удалить" onClick={()=>{
+      state.reset();remove.reset()
+      if(window.confirm(`Удалить ${labels[1]} «${item.name}» безвозвратно? Связанный с историей объект удалить нельзя.`))remove.mutate(item)
+    }}><Trash2/></button></div></div>)}</div>:<State title={`${labels[0]} пока не добавлены`}/>} 
+    {(open||editing)&&<DirectoryForm kind={kind} item={editing??undefined} onClose={()=>{setOpen(false);setEditing(null)}}/>}
+  </Card>
+}
+
+function DirectoryForm({kind,item,onClose}:{kind:DirectoryKind;item?:DirectoryItem;onClose:()=>void}) {
+  const account=item&&'type'in item?item as Account:undefined
+  const category=item&&'kind'in item?item as Category:undefined
+  const [name,setName]=useState(item?.name??'')
+  const [extra,setExtra]=useState(item&&'color'in item?item.color??'#557a5d':'')
+  const [accountType,setAccountType]=useState<'cash'|'bank'|'savings'>((account?.type as 'cash'|'bank'|'savings'|undefined)??'bank')
+  const [openingDate,setOpeningDate]=useState(account?.initial_balance_date??todayISO())
+  const [categoryKind,setCategoryKind]=useState<'income'|'expense'>((category?.kind??category?.type??'expense') as 'income'|'expense')
+  const client=useQueryClient()
+  const save=useMutation({mutationFn:()=>item
+    ? api(`/${kind}/${item.id}`,{method:'PATCH',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,version:itemVersion(item)}:{name:name.trim(),color:extra||'#557a5d',version:itemVersion(item)})})
+    : api(`/${kind}`,{method:'POST',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,initial_balance_minor:parseMoney(extra||'0'),initial_balance_date:openingDate}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{kind:categoryKind}:{})})}),
+    onSuccess:()=>{client.invalidateQueries({queryKey:[kind]});onClose()},
+  })
+  const dirty=name!==(item?.name??'')||(kind==='accounts'?accountType!==(account?.type??'bank'):extra!==(item&&'color'in item?item.color??'#557a5d':''))
+  const close=()=>{if(!dirty||window.confirm('Закрыть форму и потерять несохранённые изменения?'))onClose()}
+  return <Modal title={item?`Изменить «${item.name}»`:'Новая запись'} onClose={close}><div className="form-stack">
+    <Field label="Название"><Input autoFocus value={name} onChange={(e)=>setName(e.target.value)}/></Field>
+    {kind==='accounts' ? <>
+      <Field label="Тип счёта"><Select value={accountType} onChange={(e)=>setAccountType(e.target.value as typeof accountType)}><option value="bank">Банковский счёт / карта</option><option value="cash">Наличные</option><option value="savings">Накопительный счёт</option></Select></Field>
+      {!item&&<><Field label="Начальный остаток"><Input value={extra} onChange={(e)=>setExtra(e.target.value)} placeholder="0,00"/></Field><Field label="Остаток на начало даты"><Input type="date" value={openingDate} onChange={(e)=>setOpeningDate(e.target.value)}/></Field></>}
+    </> : <>
+      {kind==='categories' && <Field label="Тип категории" hint={item?'Тип существующей категории нельзя изменить':undefined}><Select value={categoryKind} disabled={Boolean(item)} onChange={(e)=>setCategoryKind(e.target.value as typeof categoryKind)}><option value="expense">Расход</option><option value="income">Доход</option></Select></Field>}
+      <Field label="Цвет"><Input type="color" value={extra||'#557a5d'} onChange={(e)=>setExtra(e.target.value)}/></Field>
+    </>}
+    {save.isError&&<div className="form-alert" role="alert">{actionError(save.error)}</div>}
+    <div className="form-actions"><Button variant="ghost" onClick={close}>Отмена</Button><Button disabled={!name.trim()||(!item&&kind==='accounts'&&!openingDate)||save.isPending} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':item?'Сохранить изменения':'Добавить'}</Button></div>
+  </div></Modal>
+}
+
+function Backups() {
+  const client=useQueryClient(); const backups=useQuery<Backup[]|ListResponse<Backup>>({queryKey:['backups'],queryFn:()=>api('/backups')}); const create=useMutation({mutationFn:()=>api('/backups',{method:'POST'}),onSuccess:()=>client.invalidateQueries({queryKey:['backups']})})
+  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">SQLite</span><h2>Резервные копии</h2></div><Button onClick={()=>create.mutate()} disabled={create.isPending}><DatabaseBackup/> {create.isPending?'Создаём…':'Создать копию'}</Button></div><div className="notice notice--calm"><DatabaseBackup/><div><strong>Физическая копия базы</strong><span>Создаётся безопасно через SQLite Online Backup API. Для переноса финансов между установками используйте архив проекта.</span></div></div>{backups.isLoading?<State kind="loading" title="Загружаем список"/>:asList(backups.data).length?<div className="backup-list">{asList(backups.data).map((b)=><div key={b.name}><span><strong>{b.name}</strong><small>{new Date(b.created_at).toLocaleString('ru-RU')} · {b.size?`${(b.size/1024/1024).toFixed(1)} МБ`:'размер не указан'}</small></span><Button variant="secondary" onClick={()=>download(`/api/v1/backups/${encodeURIComponent(b.name)}`,b.name)}><Download/> Скачать</Button></div>)}</div>:<State title="Копий пока нет">Создайте первую копию и сохраните её на другом носителе.</State>}</Card>
+}

@@ -8,14 +8,15 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+data/
 build/
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -213,6 +214,27 @@ tempCodeRunnerFile.py
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Node / frontend build output
+node_modules/
+frontend/dist/
+frontend/vite.config.js
+frontend/vite.config.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Local Budget Planner state (never commit financial data or secrets)
+.env
+data/
+backups/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# OS/editor noise
+.DS_Store
 
 # Streamlit
 .streamlit/secrets.toml

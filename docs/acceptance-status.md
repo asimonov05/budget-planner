@@ -1,0 +1,88 @@
+# Статус приемки
+
+Легенда: `[x]` подтверждено; `[~]` подтверждена только часть; `[ ]` не подтверждено. Доказательство относится к текущему рабочему дереву только там, где указана свежая команда; старый образ не считается доказательством для нового кода.
+
+## Последние локальные прогоны
+
+- Backend, 2026-09-28, Python 3.13.13: `.venv/bin/python -m pytest backend/tests -q` — 52 passed (43 прежних + 9 CRUD/dependency tests); одно стороннее `DeprecationWarning` из Starlette/anyio.
+- Frontend, 2026-09-28, Node 26.4.0: `npm --prefix frontend test` — 9 files, 45 tests passed. `npm --prefix frontend run lint` и `npm --prefix frontend run build` — exit 0; Vite оставил предупреждение о JS chunk 930,40 kB. Поддерживаемый bootstrap использует Node 22; отдельный прогон именно на Node 22 еще не зафиксирован.
+- Theme visual smoke, 2026-09-28: системный Google Chrome через Playwright отрисовал светлую и тёмную настройки на 1365 px, тёмные настройки и вход на 390 px, тёмные dashboard и analytics с графиками, все три дополнительные тёмные цветовые схемы и светлый «Океан» на 390 px. API для этого визуального smoke был перехвачен детерминированными fixtures; это не новый live backend E2E.
+- Live E2E, 2026-09-21: `npm --prefix e2e run typecheck` прошел; свежая Alembic-БД, реальный Uvicorn с собранной static SPA на `127.0.0.1:18081`, системный Chrome и заданные test-owner credentials — 4 Playwright tests passed. Проверены гостевой redirect/login, 360 px login, реальный вход/переход в годовой план и authenticated mobile navigation 360 px. Ready и SPA вернули 200; неизвестный API route вернул JSON 404.
+- Compose config, 2026-09-21: `docker compose config --quiet` — exit 0.
+- Container drill, 2026-09-21, `linux/arm64`: финальные backend/static слои наложены на ранее полностью собранный runtime-образ; Compose `init-admin`, ready, авторизованное создание счёта, `force-recreate`, backup и restore прошли. После restore старая сессия получила 401, а состояние счёта восстановилось. Runtime: UID/GID 10001, SQLite 3.53.4, read-only root, `cap_drop=ALL`, `no-new-privileges`; `/data` и `/backups` доступны для записи, а `/app` — нет.
+- Performance, 2026-09-21: два запуска `PYTHONPATH=backend .venv/bin/python backend/scripts/benchmark_forecast.py` — 100 000 операций, 24 месяца, по 20 теплых замеров; p50 `0,0598–0,0617 с`, p95 `0,0649–0,0675 с`.
+
+Чистая повторная multi-stage сборка именно последнего дерева заблокирована локальным DNS Docker Hub. Поэтому container drill использовал ранее полностью собранный runtime/dependencies с локальным слоем финального кода и SPA. Это доказывает runtime-поведение текущего кода, но не заменяет чистую сборку `Dockerfile`.
+
+## Функциональные сценарии
+
+| № | Сценарий и ожидаемый результат | Статус | Доказательство |
+|---:|---|:---:|---|
+| 1 | Зарплата 120 000 ежемесячно + подработка 25 000 только в ноябре → 120/145/120 тыс. | [x] | `test_salary_once_override_zero_and_inherit` |
+| 2 | Override зарплаты ноября `0`, подработка остается → ноябрь 25 000, соседи не меняются | [x] | `test_salary_once_override_zero_and_inherit` |
+| 3 | Удаление override через inherit/null возвращает базовую зарплату | [x] | `test_salary_once_override_zero_and_inherit` |
+| 4 | Части зарплаты 50 000 + 70 000 дают 120 000, не 240 000 | [x] | `test_split_salary_and_end_date` |
+| 5 | Кредит 20 000 до марта включительно отсутствует с апреля | [x] | `test_split_salary_and_end_date` |
+| 6 | План кредита 20 000 + связанный факт 20 000 дают прогноз 20 000 | [x] | `test_fully_matched_plan_and_fact_are_counted_once` |
+| 7 | План 20 000 + частичный факт 12 000 → остаток 8 000, прогноз 20 000 | [x] | `test_matching_partial_and_complete_no_double_count`, `test_loan_payments_are_atomic_idempotent_and_not_double_counted` |
+| 8 | План 20 000 + факт 18 000 «исполнено» → остаток 0, исходный план сохранен | [x] | `test_matching_partial_and_complete_no_double_count`; дополнительно кредитный API-тест подтверждает completed-under-plan = 18 000 |
+| 9 | Лимит Авто 15 000 и платеж внутри 8 000 → прогноз 15 000, U=7 000 | [x] | `test_category_limit_inside_not_added_twice` |
+| 10 | Лимит 15 000, факт 9 000, ожидается 8 000 → прогноз 17 000, превышение 2 000 | [x] | `test_category_limit_inside_not_added_twice` |
+| 11 | C=200 000, резерв отпуска 30 000 → R=30 000, F=170 000 | [x] | `test_initial_goal_reserve_does_not_exist_before_accounting_start` явно проверяет 200 000 / 30 000 / 170 000 на дате начала учета |
+| 12 | Дополнительно выделить 20 000 → C=200 000, R=50 000, F=150 000 | [x] | `test_goal_cash_reserve_free_staged_transitions` |
+| 13 | Оплатить 40 000 из цели → C=160 000, R=10 000, F=150 000 | [x] | `test_goal_cash_reserve_free_staged_transitions` |
+| 14 | Возврат 10 000 в цель → C=170 000, R=20 000, F=150 000 | [x] | `test_goal_reserve_transitions_and_recommendation` |
+| 15 | Перевод 10 000 между своими счетами не меняет C/R/F и доходы/расходы | [x] | `test_internal_transfer_is_idempotent_and_total_neutral` + zero-sum property-test |
+| 16 | Цель 150 000, резерв 30 000, 6 дат → шесть взносов по 20 000 | [~] | `test_goal_reserve_transitions_and_recommendation` проверяет деление 120 000 на шесть равных частей; property `test_goal_split_preserves_every_kopeck` проверяет копейки. Сквозной календарь шести дат не создан |
+| 17 | Частично оплаченная цель не накапливается повторно; промежуточные сроки учтены | [ ] | Нет сквозного теста промежуточных платежей цели |
+| 18 | Расход 1 000 с двумя тегами и OR-фильтр → общий итог 1 000 | [x] | `test_multi_tag_filter_counts_transaction_once` проверяет OR и AND без дублирования |
+| 19 | Правило 31-го: конец февраля корректен, в марте снова 31-е, включая високосный год | [x] | `test_last_day_rule_recovers_after_february` проверяет 28/29 февраля и возврат к 31 марта |
+| 20 | Закрыть, переоткрыть, изменить факт → последующие остатки пересчитаны, история сохранена | [x] | `test_close_and_reopen_month_switches_fact_only_and_preserves_audit` |
+| 21 | Смена окна октябрь→декабрь не сдвигает записи и сохраняет входящий остаток | [x] | `test_forecast_window_does_not_shift_carrying_balance` |
+| 22 | Нет даты/счета у части плана → дневной/посчетный прогноз явно неполон | [x] | `test_month_only_or_accountless_plan_marks_daily_forecast_incomplete` |
+| 23 | UTF-8 BOM и CP1251, запятая в сумме, кавычки, русские теги импортируются без потерь | [x] | `test_cp1251_csv_import_and_repeat_batch`, `test_utf8_bom_csv_preserves_quoted_newline_and_russian_tags` |
+| 24 | Повтор того же подтвержденного import batch не создает записи | [x] | `test_cp1251_csv_import_and_repeat_batch` |
+| 25 | Две одинаковые покупки без external ID можно сохранить обе | [x] | `test_identical_real_purchases_without_external_id_are_both_kept` |
+| 26 | Project export → чистый import сохраняет сущности, связи, overrides и итоги | [x] | `test_project_export_import_round_trip_preserves_links_and_totals`; также default settings/empty strings в отдельном тесте |
+| 27 | Formula-like CSV и ZIP traversal не исполняются; небезопасный архив отклонен | [x] | `test_formula_safe_csv_export`, `test_project_import_rejects_traversal` |
+| 28 | Одинаковый idempotency key проведения → одна операция и одна связь | [x] | `test_idempotent_transaction`, `test_idempotent_plan_match_is_exposed_on_transaction_list`, кредитный idempotency-тест |
+| 29 | Два изменения одной версии → одно успешно, второе получает понятный 409 | [x] | `test_version_conflict`; ORM race guard: `test_sqlalchemy_version_guard_rejects_actual_concurrent_update` |
+| 30 | Обрыв в середине перевода/import confirm не оставляет половинчатых изменений | [~] | `test_import_confirmation_is_atomic_and_respects_closed_month` и `test_invalid_project_archive_rolls_back_all_rows`; fault injection в середине перевода отсутствует |
+| 31 | Restart, recreate и rebuild контейнера сохраняют подтвержденные данные | [~] | В изолированном Compose project счёт 123456 сохранился после `force-recreate` и смены локального image layer; чистый multi-stage rebuild не повторён из-за DNS |
+| 32 | Online backup WAL-базы и restore при остановленном app сохраняют целостность и итоги | [x] | После container backup добавлен второй счёт; app остановлен, CLI restore вернул ровно первый счёт, ready прошёл, а старая сессия получила 401; дополнительно — `test_restore_publishes_checked_database_without_old_sessions_or_sidecars` |
+| 33 | Неавторизованные data/export/backup и мутация без CSRF отклонены | [x] | `test_auth_and_csrf` проверяет data/export/backup 401 и CSRF 403; spoofed forwarded host/origin: `test_origin_cannot_be_whitelisted_by_spoofed_forwarded_host` |
+| 34 | После сборки основные экраны и операции работают без внешнего интернета | [ ] | Актуальный offline container/E2E прогон не выполнен |
+| 35 | Архивирование категории/цели/счета сохраняет историю и отчеты | [x] | `test_archiving_account_and_category_preserves_history_and_forecast` проверяет категорию, счёт, цель с сохранённым резервом, историю и итог прогноза |
+
+## Инфраструктура, UI и производительность
+
+| Проверка | Статус | Доказательство |
+|---|:---:|---|
+| Backend suite | [x] | `.venv/bin/python -m pytest backend/tests -q` → 52 passed; `.venv/bin/python -m ruff check backend/app backend/tests backend/alembic backend/scripts` → clean |
+| Frontend suite | [x] | `npm --prefix frontend test` → 9 files, 45 passed (Node 26.4.0) |
+| Ruff + TypeScript strict + production SPA build | [x] | Ruff clean; `npm --prefix frontend run lint` и `npm --prefix frontend run build` → exit 0. Build предупреждает о 930,40 kB JS chunk |
+| Темы и цветовые схемы | [x] | Unit/integration tests проверяют persistence, system listener, четыре схемы и переключатели настроек; Playwright visual smoke проверил desktop, 390 px, login, dashboard, settings и Recharts |
+| `docker compose config --quiet` | [x] | 2026-09-21, exit 0 |
+| Текущий Docker image rebuild + ready smoke | [~] | Текущие backend/static прошли Compose ready/persistence/restore в локальном overlay-образе; чистая multi-stage сборка последнего дерева заблокирована DNS Docker Hub |
+| Runtime Python связан с SQLite >= 3.51.3 | [x] | Container probe: Python SQLite 3.53.4; Dockerfile и entrypoint дополнительно падают при версии <3.51.3 |
+| Контейнер работает UID 10001 и пишет только в `/data`, `/backups`, `/tmp` | [x] | Runtime probe: UID/GID 10001, rootfs read-only, `/app` write rejected, `/data` и `/backups` write passed, `cap_drop=ALL`, `no-new-privileges` |
+| `linux/amd64` build + smoke | [ ] | — |
+| `linux/arm64` build + smoke | [~] | Ранее полная arm64 multi-stage сборка + финальный code/static overlay прошли smoke; нет чистой финальной multi-stage сборки |
+| Playwright guest + authenticated desktop/360 px на текущем production build | [~] | 4/4 live E2E passed на сборке 2026-09-21; для текущей theme-сборки выполнен отдельный mocked visual smoke, но полный live E2E не повторён |
+| Ready, SPA fallback и JSON 404 для неизвестного API | [x] | В live-протоколе ready и SPA → 200, неизвестный API route → JSON/404 |
+| 100 000 операций, 24 месяца, p95 обзора < 1 s | [~] | Два прогона репозиторного benchmark по 20 warm runs: p50 0,0598–0,0617 s, p95 0,0649–0,0675 s; нет RSS/CPU и контейнерного лимита 2 vCPU / 2 GiB |
+
+## Открытые ограничения реализации
+
+- CSV-мастер не умеет произвольное сопоставление колонок, общий счет на файл, построчное исключение через UI, импорт переводов, лимитов и взносов целей. Подтвержденный batch нельзя отменить.
+- Читаемый CSV с русскими заголовками и именами счетов/категорий экспортирует только фактические операции; полный перенос выполняет отдельный канонический ZIP.
+- UI поддерживает редактирование, архив/восстановление и безопасное удаление счетов, категорий, тегов, целей, кредитов, планов, фактов, переводов и строк кредитного графика. Ручная сортировка справочников, локальные overrides и изменение базовой периодичности существующего плана по-прежнему ограничены.
+- Нет версий повторяющихся правил и областей изменения «этот и будущие/диапазон»; месячный итог зарплаты и её части не имеют общей групповой идентичности, поэтому их нельзя вводить одновременно.
+- График взносов цели и обеспеченность промежуточных оплат по датам не моделируются end-to-end. Обычный возврат уменьшает чистый расход, но не хранит ссылку на исходную покупку.
+- Категоризованный график кредита и отдельный плановый платёж нельзя вводить вместе: между ними нет общей идентичности, и возможен double-counting. Закрытие месяца блокирует мутации и фиксирует факт, но не ведёт мастер переноса/отмены каждого неоплаченного ожидания.
+- Frontend DTO пока описаны вручную, а не сгенерированы из OpenAPI; дневной/посчетный прогноз и отдельные analytics endpoints покрыты не полностью.
+- Канонический ZIP импортируется только в пустую финансовую установку. Проверяются whitelist, traversal и общий заявленный размер; отдельной проверки symlink attributes/compression ratio нет.
+- Нет автоматической ротации backup. Compose restore при остановленном app проведён; аварийное восстановление после искусственного crash не проверялось.
+- E2E покрытие пока smoke-уровня; большинство финансовых сценариев доказаны backend integration/unit-тестами, а не браузером.
+- Production SPA собирается, но основной minified JS chunk сейчас около 930,40 kB; Vite рекомендует code splitting.
+- Не закрыты сквозные проверки промежуточных платежей цели и offline/current multi-arch образов.
