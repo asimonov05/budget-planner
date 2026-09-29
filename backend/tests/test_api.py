@@ -603,6 +603,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
     assert exported.status_code == 200
     legacy = io.BytesIO()
     removed = {
+        "app_settings.csv": {"salary_enabled"},
         "categories.csv": {"monthly_estimate"},
         "loans.csv": {
             "annual_rate_bps",
@@ -625,9 +626,12 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         zipfile.ZipFile(legacy, "w") as destination,
     ):
         for name in source.namelist():
+            if name in ("salary_rules.csv", "salary_matches.csv"):
+                continue
             if name == "manifest.json":
                 manifest = json.loads(source.read(name))
                 manifest["schema_version"] = 1
+                manifest["files"] = [file for file in manifest["files"] if file not in ("salary_rules.csv", "salary_matches.csv")]
                 destination.writestr(name, json.dumps(manifest))
             elif name in removed:
                 reader = csv.DictReader(io.StringIO(source.read(name).decode("utf-8")))
@@ -650,7 +654,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 3
+    assert imported.json()["schema_version"] == 4
     db.expire_all()
     restored_loan = db.scalar(select(Loan))
     restored_payment = db.scalar(
@@ -671,13 +675,17 @@ def test_version_2_project_archive_defaults_monthly_category_estimate(client, au
         zipfile.ZipFile(legacy, "w") as destination,
     ):
         for name in source.namelist():
+            if name in ("salary_rules.csv", "salary_matches.csv"):
+                continue
             if name == "manifest.json":
                 manifest = json.loads(source.read(name))
                 manifest["schema_version"] = 2
+                manifest["files"] = [file for file in manifest["files"] if file not in ("salary_rules.csv", "salary_matches.csv")]
                 destination.writestr(name, json.dumps(manifest))
-            elif name == "categories.csv":
+            elif name in ("categories.csv", "app_settings.csv"):
                 reader = csv.DictReader(io.StringIO(source.read(name).decode("utf-8")))
-                fields = [field for field in reader.fieldnames or [] if field != "monthly_estimate"]
+                removed = "monthly_estimate" if name == "categories.csv" else "salary_enabled"
+                fields = [field for field in reader.fieldnames or [] if field != removed]
                 output = io.StringIO()
                 writer = csv.DictWriter(output, fieldnames=fields)
                 writer.writeheader()
@@ -696,7 +704,7 @@ def test_version_2_project_archive_defaults_monthly_category_estimate(client, au
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 3
+    assert imported.json()["schema_version"] == 4
     db.expire_all()
     assert db.scalar(select(Category).where(Category.name == "Продукты")).monthly_estimate is False
 

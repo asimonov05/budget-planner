@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  BarChart3, Bug, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, LayoutDashboard,
+  BarChart3, Bug, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, Landmark, LayoutDashboard,
   LogOut, Menu, PanelLeftClose, PiggyBank, ReceiptText, Settings, TableProperties, WalletCards, X,
 } from 'lucide-react'
 import { api } from '../lib/api'
@@ -10,6 +10,7 @@ import type { User } from '../lib/types'
 
 const navigation = [
   { to: '/', label: 'Обзор', icon: LayoutDashboard, end: true },
+  { to: '/accounts', label: 'Счета', icon: Landmark },
   { to: '/plan', label: 'План', icon: TableProperties },
   { to: '/calendar', label: 'Календарь', icon: CalendarDays },
   { to: '/incomes', label: 'Доходы', icon: PiggyBank },

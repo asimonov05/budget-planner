@@ -13,6 +13,7 @@ import { AnalyticsPage } from './pages/Analytics'
 import { ExchangePage } from './pages/Exchange'
 import { SettingsPage } from './pages/Settings'
 import { CalendarPage } from './pages/Calendar'
+import { AccountsPage } from './pages/Accounts'
 
 async function loadCurrentUser(): Promise<User | null> {
   try {
@@ -38,6 +39,7 @@ export function App() {
     <Route path="/login" element={<Login currentUser={me.data} />} />
     <Route element={<Protected />}>
       <Route index element={<DashboardPage />} />
+      <Route path="accounts" element={<AccountsPage />} />
       <Route path="plan" element={<PlanPage />} />
       <Route path="calendar" element={<CalendarPage />} />
       <Route path="incomes" element={<ResourcePage type="income" />} />

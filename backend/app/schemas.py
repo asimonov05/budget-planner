@@ -22,6 +22,7 @@ class SettingsOut(ORMModel):
     currency: str
     timezone: str
     accounting_start_date: DateType
+    salary_enabled: bool
     version: int
 
 
@@ -29,6 +30,76 @@ class SettingsUpdate(VersionedUpdate):
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     timezone: str | None = Field(None, min_length=1, max_length=64)
     accounting_start_date: DateType | None = None
+    salary_enabled: bool | None = None
+
+
+MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+
+
+class SalaryRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    gross_minor: int = Field(gt=0, le=MAX_SAFE_INTEGER)
+    advance_share_bps: int = Field(gt=0, lt=10_000)
+    advance_day: int = Field(ge=16, le=31)
+    salary_day: int = Field(ge=1, le=15)
+    start_month: str = Field(pattern=MONTH_PATTERN)
+    end_month: str | None = Field(None, pattern=MONTH_PATTERN)
+    initial_tax_base_minor: int = Field(default=0, ge=0, le=MAX_SAFE_INTEGER)
+    initial_tax_year: int | None = Field(None, ge=2025, le=2100)
+    account_id: int | None = Field(None, ge=1)
+    category_id: int | None = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def valid_period(self) -> "SalaryRuleCreate":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Employer name is required")
+        if not 2025 <= int(self.start_month[:4]) <= 2100:
+            raise ValueError("Salary start year must be between 2025 and 2100")
+        if self.end_month and not 2025 <= int(self.end_month[:4]) <= 2100:
+            raise ValueError("Salary end year must be between 2025 and 2100")
+        if self.end_month and self.end_month < self.start_month:
+            raise ValueError("End month precedes start month")
+        if self.initial_tax_base_minor and self.initial_tax_year is None:
+            raise ValueError("Initial tax year is required when tax base is set")
+        if self.initial_tax_base_minor and self.initial_tax_year != int(self.start_month[:4]):
+            raise ValueError("Initial tax year must equal salary start year")
+        return self
+
+
+class SalaryRuleUpdate(SalaryRuleCreate):
+    version: int = Field(ge=1)
+    archived: bool = False
+
+
+class SalaryRuleOut(ORMModel):
+    id: int
+    name: str
+    gross_minor: int
+    advance_share_bps: int
+    advance_day: int
+    salary_day: int
+    start_month: str
+    end_month: str | None
+    initial_tax_base_minor: int
+    initial_tax_year: int | None
+    account_id: int | None
+    category_id: int | None
+    archived: bool
+    version: int
+
+
+class SalaryMatchCreate(BaseModel):
+    earning_month: str = Field(pattern=MONTH_PATTERN)
+    component: Literal["advance", "salary"]
+    transaction_id: int = Field(ge=1)
+    amount_minor: int = Field(gt=0, le=MAX_SAFE_INTEGER)
+
+    @model_validator(mode="after")
+    def valid_year(self) -> "SalaryMatchCreate":
+        if not 2025 <= int(self.earning_month[:4]) <= 2100:
+            raise ValueError("Salary earning year must be between 2025 and 2100")
+        return self
 
 
 class AccountCreate(BaseModel):
@@ -172,6 +243,9 @@ class TransactionOut(ORMModel):
     matched_occurrence_month: str | None = None
     matched_amount_minor: int | None = None
     match_completed: bool | None = None
+    matched_salary_rule_id: int | None = None
+    matched_salary_earning_month: str | None = None
+    matched_salary_component: str | None = None
 
 
 class TransferCreate(BaseModel):

@@ -20,6 +20,11 @@ interface CalendarItem {
   has_override?: boolean
   version?: number
 }
+interface SalaryPayment {
+  salary_rule_id: number; employer: string; earning_month: string; component: 'advance' | 'salary';
+  date: string; net_minor: number; gross_minor: number; tax_minor: number; matched_minor: number;
+  calendar_confirmed: boolean; tax_policy_confirmed: boolean
+}
 
 function shift(month: string, delta: number) {
   const [year, monthNumber] = month.split('-').map(Number)
@@ -131,6 +136,7 @@ export function CalendarPage() {
     queryKey: ['calendar', month],
     queryFn: () => api(`/plan-items?${queryString({ month })}`),
   })
+  const salaryQuery = useQuery<ListResponse<SalaryPayment>>({ queryKey: ['salary-payments', month], queryFn: () => api(`/salary-payments?${queryString({ month })}`) })
   const days = useMemo<Array<number | null>>(() => {
     const [year, monthNumber] = month.split('-').map(Number)
     const first = new Date(year, monthNumber - 1, 1)
@@ -143,13 +149,14 @@ export function CalendarPage() {
   const items = asList(query.data)
   const dated = items.filter((item) => item.date)
   const undated = items.filter((item) => !item.date)
+  const salaryPayments = asList(salaryQuery.data)
 
   return <div className="page">
     <PageHeader eyebrow="По датам" title="Календарь" description="Нажмите на поступление или платёж, чтобы изменить сумму и дату одного повторения." actions={<div className="month-switch"><button aria-label="Предыдущий месяц" onClick={() => setMonth(shift(month, -1))}><ChevronLeft /></button><input aria-label="Месяц календаря" type="month" value={month} onChange={(event) => setMonth(event.target.value)} /><button aria-label="Следующий месяц" onClick={() => setMonth(shift(month, 1))}><ChevronRight /></button></div>} />
     {query.isLoading && <State kind="loading" title="Составляем календарь" />}
     {query.isError && <ErrorState error={query.error} retry={() => query.refetch()} />}
     {query.data && <div className="calendar-layout">
-      <div className="calendar"><div className="calendar-week">{['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => <b key={day}>{day}</b>)}</div><div className="calendar-grid">{days.map((day, index) => <div className={`calendar-day ${day === new Date().getDate() && month === currentMonth() ? 'today' : ''}`} key={`${day}-${index}`}>{day && <><span>{day}</span>{dated.filter((item) => Number(item.date?.slice(-2)) === day).map((item) => <button type="button" className={`calendar-event calendar-event--${item.kind}`} key={`${item.id}-${item.occurrence_month}`} aria-label={`Изменить ${item.title} за ${monthLabel(item.occurrence_month)}`} onClick={() => setEditing(item)}><small>{item.title}{item.has_override ? ' · изменено' : ''}</small><b>{formatMoney(item.amount_minor)}</b></button>)}</>}</div>)}</div></div>
+      <div className="calendar"><div className="calendar-week">{['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => <b key={day}>{day}</b>)}</div><div className="calendar-grid">{days.map((day, index) => <div className={`calendar-day ${day === new Date().getDate() && month === currentMonth() ? 'today' : ''}`} key={`${day}-${index}`}>{day && <><span>{day}</span>{dated.filter((item) => Number(item.date?.slice(-2)) === day).map((item) => <button type="button" className={`calendar-event calendar-event--${item.kind}`} key={`${item.id}-${item.occurrence_month}`} aria-label={`Изменить ${item.title} за ${monthLabel(item.occurrence_month)}`} onClick={() => setEditing(item)}><small>{item.title}{item.has_override ? ' · изменено' : ''}</small><b>{formatMoney(item.amount_minor)}</b></button>)}{salaryPayments.filter((payment) => Number(payment.date.slice(-2)) === day).map((payment) => <div className="calendar-event calendar-event--income" key={`salary-${payment.salary_rule_id}-${payment.earning_month}-${payment.component}`} title={`До налога ${formatMoney(payment.gross_minor)}, НДФЛ ${formatMoney(payment.tax_minor)}. Настройка во вкладке «Зарплата».`}><small>{payment.employer} · {payment.component === 'advance' ? 'аванс' : 'зарплата'}{payment.matched_minor ? ' · учтено' : ''}{!payment.calendar_confirmed || !payment.tax_policy_confirmed ? ' · предварительно' : ''}</small><b>{formatMoney(payment.net_minor)}</b></div>)}</>}</div>)}</div></div>
       <aside className="undated"><h2>Без точной даты</h2>{undated.length ? undated.map((item) => <button type="button" className="undated-item" key={`${item.id}-${item.occurrence_month}`} onClick={() => setEditing(item)}><span>{item.title}<small>{item.account_id ? 'Счёт выбран' : 'Счёт не выбран'}</small></span><b>{formatMoney(item.amount_minor)}</b></button>) : <State title="Все суммы распределены" />}{undated.length > 0 && <div className="notice"><AlertTriangle /><span>Дневной прогноз неполный</span></div>}</aside>
     </div>}
     {editing && <CalendarOccurrenceEditor key={`${editing.id}-${editing.occurrence_month}`} item={editing} onClose={() => setEditing(null)} onSaved={(targetMonth) => { setEditing(null); setMonth(targetMonth) }} />}

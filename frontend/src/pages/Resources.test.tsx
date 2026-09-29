@@ -147,8 +147,8 @@ describe('transaction resource integration', () => {
     render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
 
     await screen.findByText('Операций пока нет')
-    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
-    fireEvent.change(screen.getByLabelText('Тип операции'), { target: { value: 'transfer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Перевод между счетами' }))
+    expect(screen.getByLabelText('Тип операции')).toHaveValue('transfer')
     fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '10 000' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
     fireEvent.change(screen.getByLabelText('Со счёта'), { target: { value: '3' } })

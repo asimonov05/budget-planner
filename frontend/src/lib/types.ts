@@ -20,6 +20,7 @@ export interface Transaction {
   loan_balance_applied?: boolean | null;
   matched_plan_item_id?: ID | null; matched_occurrence_month?: string | null;
   matched_amount_minor?: number | null; match_completed?: boolean | null; category_id?: ID | null; version?: number
+  matched_salary_rule_id?: ID | null; matched_salary_earning_month?: string | null; matched_salary_component?: string | null
 }
 export interface Transfer {
   id: ID; from_account_id: ID; to_account_id: ID; amount_minor: number; date: string; comment?: string; version?: number

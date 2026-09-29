@@ -9,6 +9,7 @@ import { dateLabel, formatMoney, parseMoney } from '../lib/format'
 import type { Account, Category, ID, ListResponse, Loan, LoanScheduleItem, Tag, Transaction, Transfer } from '../lib/types'
 import { Badge, Button, ErrorState, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { AutoLoanProjection } from '../components/AutoLoanProjection'
+import { SalaryIncomeSummary } from '../components/SalaryIncomeSummary'
 
 type ResourceType = 'income' | 'payment' | 'transaction' | 'loan'
 interface PlanItem {
@@ -132,7 +133,7 @@ function resourceSubtitle(item: Item, type: ResourceType, loanNames: Map<string,
 }
 
 export function ResourcePage({ type }: { type: ResourceType }) {
-  const config = configs[type]; const client = useQueryClient(); const [open, setOpen] = useState(false); const [editing, setEditing] = useState<EditableItem | null>(null); const [search, setSearch] = useState(''); const [page, setPage] = useState(1); const [scheduleLoan, setScheduleLoan] = useState<Loan | null>(null); const [matchingPlan, setMatchingPlan] = useState<PlanItem | null>(null); const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null); const [transferSaved, setTransferSaved] = useState(false)
+  const config = configs[type]; const client = useQueryClient(); const [open, setOpen] = useState(false); const [quickTransfer, setQuickTransfer] = useState(false); const [editing, setEditing] = useState<EditableItem | null>(null); const [search, setSearch] = useState(''); const [page, setPage] = useState(1); const [scheduleLoan, setScheduleLoan] = useState<Loan | null>(null); const [matchingPlan, setMatchingPlan] = useState<PlanItem | null>(null); const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null); const [transferSaved, setTransferSaved] = useState(false)
   const pageSize = 100
   const filter = type === 'income' ? { kind: 'income' } : type === 'payment' ? { kind: 'expense' } : type === 'transaction' ? { limit: pageSize, offset: (page - 1) * pageSize } : { include_archived: true }
   const list = useQuery<Item[] | ListResponse<Item>>({ queryKey: [config.endpoint, filter], queryFn: () => api(`${config.endpoint}?${queryString(filter)}`) })
@@ -201,7 +202,8 @@ export function ResourcePage({ type }: { type: ResourceType }) {
     if (window.confirm(`Удалить «${label}» безвозвратно? Если запись связана с историей, сервер не позволит удаление.`)) remove.mutate({ endpoint, item })
   }
   const mutationError = actionError(changeState.error ?? remove.error ?? unlinkLoan.error)
-  return <div className="page"><PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<Button onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setTransferSaved(false); setOpen(true) }}><CirclePlus/> {config.add}</Button>} />
+  return <div className="page"><PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<>{type === 'transaction' && <Button variant="secondary" onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(true); setTransferSaved(false); setOpen(true) }}><ArrowRight/> Перевод между счетами</Button>}<Button onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(false); setTransferSaved(false); setOpen(true) }}><CirclePlus/> {config.add}</Button></>} />
+    {type === 'income' && <SalaryIncomeSummary/>}
     <div className="list-toolbar"><label className="search"><Search/><input placeholder="Поиск" value={search} onChange={(e) => setSearch(e.target.value)}/></label>{type === 'transaction' && <Badge tone="neutral">Переводы не входят в доходы и расходы</Badge>}</div>
     {transferSaved && <div className="notice notice--calm"><ArrowRight/><div><strong>Перевод сохранён</strong><span>Деньги перемещены между счетами без изменения общих доходов и расходов.</span></div></div>}
     {mutationError && <div className="form-alert" role="alert">{mutationError}</div>}
@@ -242,17 +244,17 @@ export function ResourcePage({ type }: { type: ResourceType }) {
           <div><strong>{accountNames.get(String(transfer.from_account_id)) ?? `Счёт ${transfer.from_account_id}`} → {accountNames.get(String(transfer.to_account_id)) ?? `Счёт ${transfer.to_account_id}`}</strong><small>{transfer.comment || 'Внутреннее перемещение'}</small></div>
           <span>{dateLabel(transfer.date)}</span><span><Badge tone="neutral">Перевод</Badge></span><strong>{formatMoney(transfer.amount_minor)}</strong><div className="row-actions"><button className="icon-button" aria-label={`Изменить перевод ${transfer.id}`} title="Изменить" onClick={() => editItem(transfer)}><Pencil/></button><button className="icon-button icon-button--danger" aria-label={`Удалить перевод ${transfer.id}`} title="Удалить" onClick={() => deleteItem('/transfers', transfer, `перевод от ${dateLabel(transfer.date)}`)}><Trash2/></button></div>
         </div>)}
-      </div> : <State title={asList(transfers.data).length ? 'Переводы не найдены' : 'Переводов пока нет'}>{asList(transfers.data).length ? 'Измените строку поиска.' : 'Создайте перевод через кнопку «Добавить операцию».'}</State>)}
+      </div> : <State title={asList(transfers.data).length ? 'Переводы не найдены' : 'Переводов пока нет'}>{asList(transfers.data).length ? 'Измените строку поиска.' : 'Нажмите «Перевод между счетами», чтобы создать первый перевод.'}</State>)}
     </section>}
-    {(open || editing) && <ResourceForm type={type} item={editing ?? undefined} accounts={asList(accounts.data)} categories={asList(categories.data)} tags={asList(tags.data)} loans={loanItems} mutation={save} onClose={() => { setOpen(false); setEditing(null) }}/>}
+    {(open || editing) && <ResourceForm type={type} item={editing ?? undefined} initialTransactionType={quickTransfer ? 'transfer' : undefined} accounts={asList(accounts.data)} categories={asList(categories.data)} tags={asList(tags.data)} loans={loanItems} mutation={save} onClose={() => { setOpen(false); setEditing(null); setQuickTransfer(false) }}/>}
     {matchingPlan && <PlanMatchForm plan={matchingPlan} onClose={() => setMatchingPlan(null)} />}
     {linkingTransaction && <LoanTransactionLinkForm transaction={linkingTransaction} loans={loanItems} onClose={() => setLinkingTransaction(null)} />}
     {activeScheduleLoan && (activeScheduleLoan.schedule_mode === 'auto' ? <AutoLoanProjection loan={activeScheduleLoan} onClose={() => setScheduleLoan(null)} /> : <LoanSchedule loan={activeScheduleLoan} accounts={asList(accounts.data)} categories={asList(categories.data)} onClose={() => setScheduleLoan(null)} />)}
   </div>
 }
 
-function resourceDefaults(type: ResourceType, item?: EditableItem): FormValues {
-  if (!item) return { certainty: 'confirmed', recurrence: 'none', transaction_type: 'expense', interest_method: 'simple', schedule_mode: 'manual', loan_id: '', prepayment_strategy: '', tag_ids: [] }
+function resourceDefaults(type: ResourceType, item?: EditableItem, initialTransactionType = 'expense'): FormValues {
+  if (!item) return { certainty: 'confirmed', recurrence: 'none', transaction_type: initialTransactionType, interest_method: 'simple', schedule_mode: 'manual', loan_id: '', prepayment_strategy: '', tag_ids: [] }
   if ('from_account_id' in item) return {
     transaction_type: 'transfer', amount: moneyInput(item.amount_minor), date: item.date,
     account_id: String(item.from_account_id), to_account_id: String(item.to_account_id), comment: item.comment ?? '', tag_ids: [],
@@ -269,9 +271,9 @@ function resourceDefaults(type: ResourceType, item?: EditableItem): FormValues {
   return { title: plan.title, amount: moneyInput(plan.amount_minor), date: plan.date ?? plan.start_date ?? '', month: plan.month ?? '', account_id: plan.account_id == null ? '' : String(plan.account_id), category_id: plan.category_id == null ? '' : String(plan.category_id), loan_id: plan.loan_id == null ? '' : String(plan.loan_id), recurrence: plan.recurrence, certainty: plan.certainty, end_date: plan.end_date ?? '', comment: plan.comment ?? '', tag_ids: plan.tags?.map((tag) => String(tag.id)) ?? [] }
 }
 
-function ResourceForm({ type, item, accounts, categories, tags, loans, mutation, onClose }: { type: ResourceType; item?: EditableItem; accounts: Account[]; categories: Category[]; tags: Tag[]; loans: Loan[]; mutation: ReturnType<typeof useMutation<unknown, Error, ResourceSubmission>>; onClose: () => void }) {
+function ResourceForm({ type, item, initialTransactionType, accounts, categories, tags, loans, mutation, onClose }: { type: ResourceType; item?: EditableItem; initialTransactionType?: string; accounts: Account[]; categories: Category[]; tags: Tag[]; loans: Loan[]; mutation: ReturnType<typeof useMutation<unknown, Error, ResourceSubmission>>; onClose: () => void }) {
   const submissionKey = useRef<string | null>(null)
-  const { register, handleSubmit, watch, formState: { errors, isDirty } } = useForm<FormValues>({ resolver: zodResolver(schemaFor(type)), defaultValues: resourceDefaults(type, item) })
+  const { register, handleSubmit, watch, formState: { errors, isDirty } } = useForm<FormValues>({ resolver: zodResolver(schemaFor(type)), defaultValues: resourceDefaults(type, item, initialTransactionType) })
   const transactionType = watch('transaction_type')
   const accountId = watch('account_id')
   const recurrence = watch('recurrence')

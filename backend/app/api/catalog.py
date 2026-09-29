@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -17,6 +18,7 @@ from ..models import (
     Category,
     Loan,
     PlanItem,
+    SalaryRule,
     PlanItemTag,
     Tag,
     Transaction,
@@ -120,6 +122,8 @@ def update_settings(
             ZoneInfo(data["timezone"])
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=422, detail="Unknown IANA timezone") from exc
+    if data.get("salary_enabled") and data.get("currency", value.currency) != "RUB":
+        raise HTTPException(status_code=422, detail="Russian salary calculation requires RUB currency")
     for key, val in data.items():
         setattr(value, key, val)
     value.version += 1
@@ -128,15 +132,20 @@ def update_settings(
     return value
 
 
-def account_balance(db: Session, account: Account) -> int:
+def account_balance(db: Session, account: Account, as_of: date) -> int:
+    if account.initial_balance_date > as_of:
+        return 0
     total = account.initial_balance_minor
-    for tx in db.scalars(select(Transaction).where(Transaction.account_id == account.id)).all():
+    for tx in db.scalars(
+        select(Transaction).where(Transaction.account_id == account.id, Transaction.date <= as_of)
+    ).all():
         total += (
             tx.amount_minor if tx.type in ("income", "refund", "adjustment") else -tx.amount_minor
         )
     for transfer in db.scalars(
         select(Transfer).where(
-            (Transfer.from_account_id == account.id) | (Transfer.to_account_id == account.id)
+            (Transfer.from_account_id == account.id) | (Transfer.to_account_id == account.id),
+            Transfer.date <= as_of,
         )
     ).all():
         total += (
@@ -151,13 +160,19 @@ def account_balance(db: Session, account: Account) -> int:
 def list_accounts(
     include_archived: bool = False, _=Depends(require_user), db: Session = Depends(get_db)
 ) -> dict:
+    settings = db.get(AppSettings, 1)
+    try:
+        zone = ZoneInfo(settings.timezone if settings else "Europe/Moscow")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = ZoneInfo("Europe/Moscow")
+    as_of = datetime.now(zone).date()
     statement = select(Account).order_by(Account.id)
     if not include_archived:
         statement = statement.where(Account.archived.is_(False))
     items = []
     for account in db.scalars(statement).all():
         item = AccountOut.model_validate(account).model_dump()
-        item["current_balance_minor"] = account_balance(db, account)
+        item["current_balance_minor"] = account_balance(db, account, as_of)
         items.append(item)
     return {"items": items, "total": len(items)}
 
@@ -219,6 +234,7 @@ def delete_account(
                 select(func.count()).select_from(PlanItem).where(PlanItem.account_id == entity_id)
             ),
             db.scalar(select(func.count()).select_from(Loan).where(Loan.account_id == entity_id)),
+            db.scalar(select(func.count()).select_from(SalaryRule).where(SalaryRule.account_id == entity_id)),
         )
     )
     if has_references:
@@ -311,6 +327,7 @@ def delete_category(
                 .select_from(BudgetLimit)
                 .where(BudgetLimit.category_id == entity_id)
             ),
+            db.scalar(select(func.count()).select_from(SalaryRule).where(SalaryRule.category_id == entity_id)),
         )
     )
     if has_references:

@@ -26,6 +26,7 @@ from ..models import (
     Transaction,
 )
 from .loans import PaymentRow, monthly_dates, project_loan
+from .salary_projection import projected_salary_payments
 
 MONTHLY_ESTIMATE_WINDOW = 3
 
@@ -284,6 +285,10 @@ def calculate_forecast(
     closed = {
         m.month for m in db.scalars(select(BudgetMonth).where(BudgetMonth.status == "closed")).all()
     }
+    salary_by_month: dict[str, list[dict]] = defaultdict(list)
+    if settings and settings.salary_enabled:
+        for payout in projected_salary_payments(db, through):
+            salary_by_month[month_key(payout["date"])].append(payout)
 
     initial_r = sum(g.initial_reserved_minor for g in goals)
     c, r = 0, 0
@@ -383,6 +388,29 @@ def calculate_forecast(
                 result.goal_refunds += movement.amount_minor
 
         if month not in closed:
+            for payout in salary_by_month.get(month, []):
+                remaining = payout["remaining_minor"]
+                if not remaining:
+                    continue
+                result.income += remaining
+                result.expected_income += remaining
+                if not payout["calendar_confirmed"] or not payout["tax_policy_confirmed"] or payout["account_id"] is None:
+                    result.incomplete = True
+                result.details.append({
+                    "source": "salary_projection",
+                    "kind": "income",
+                    "salary_rule_id": payout["salary_rule_id"],
+                    "employer": payout["employer"],
+                    "earning_month": payout["earning_month"],
+                    "component": payout["component"],
+                    "date": payout["date"].isoformat(),
+                    "gross_minor": payout["gross_minor"],
+                    "tax_minor": payout["tax_minor"],
+                    "net_minor": payout["net_minor"],
+                    "amount_minor": remaining,
+                    "calendar_confirmed": payout["calendar_confirmed"],
+                    "tax_policy_confirmed": payout["tax_policy_confirmed"],
+                })
             for loan_id, row in auto_loan_rows_by_month.get(month, []):
                 result.expense += row.payment_minor
                 result.expected_expense += row.payment_minor

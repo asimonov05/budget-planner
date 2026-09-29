@@ -62,6 +62,7 @@ class AppSettings(Base, TimestampVersionMixin):
     currency: Mapped[str] = mapped_column(String(3), default="RUB")
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
     accounting_start_date: Mapped[date] = mapped_column(Date, default=date.today)
+    salary_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class Account(Base, TimestampVersionMixin):
@@ -220,6 +221,43 @@ class PlanMatch(Base):
     )
     amount_minor: Mapped[int] = mapped_column(Integer)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class SalaryRule(Base, TimestampVersionMixin):
+    __tablename__ = "salary_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    gross_minor: Mapped[int] = mapped_column(Integer)
+    advance_share_bps: Mapped[int] = mapped_column(Integer, default=4_000)
+    advance_day: Mapped[int] = mapped_column(Integer, default=25)
+    salary_day: Mapped[int] = mapped_column(Integer, default=10)
+    start_month: Mapped[str] = mapped_column(String(7))
+    end_month: Mapped[str | None] = mapped_column(String(7))
+    initial_tax_base_minor: Mapped[int] = mapped_column(Integer, default=0)
+    initial_tax_year: Mapped[int | None] = mapped_column(Integer)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    __table_args__ = (
+        CheckConstraint("gross_minor > 0"),
+        CheckConstraint("advance_share_bps > 0 AND advance_share_bps < 10000"),
+        CheckConstraint("advance_day BETWEEN 16 AND 31"),
+        CheckConstraint("salary_day BETWEEN 1 AND 15"),
+        CheckConstraint("initial_tax_base_minor >= 0"),
+    )
+
+
+class SalaryMatch(Base):
+    __tablename__ = "salary_matches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    salary_rule_id: Mapped[int] = mapped_column(
+        ForeignKey("salary_rules.id", ondelete="CASCADE"), index=True
+    )
+    earning_month: Mapped[str] = mapped_column(String(7))
+    component: Mapped[str] = mapped_column(String(16))
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), unique=True)
+    amount_minor: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (CheckConstraint("amount_minor > 0"),)
 
 
 class BudgetLimit(Base, TimestampVersionMixin):

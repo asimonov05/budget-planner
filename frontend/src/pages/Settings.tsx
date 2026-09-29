@@ -6,9 +6,10 @@ import { formatMoney, parseMoney, todayISO } from '../lib/format'
 import { useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
 import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
+import { SalarySettings } from '../components/SalarySettings'
 
-type Tab = 'general'|'appearance'|'accounts'|'categories'|'tags'|'backups'
-interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; version: number }
+type Tab = 'general'|'salary'|'appearance'|'accounts'|'categories'|'tags'|'backups'
+interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; salary_enabled: boolean; version: number }
 interface Backup { name: string; created_at: string; size: number }
 type DirectoryKind = 'accounts'|'categories'|'tags'
 type DirectoryItem = Account|Category|Tag
@@ -22,8 +23,11 @@ function actionError(error: Error | null) {
 }
 
 export function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('general')
-  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, оформление, справочники и физические резервные копии."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button><button className={tab==='backups'?'active':''} onClick={() => setTab('backups')}><DatabaseBackup/> Резервные копии</button></aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'backups' && <Backups/>}</section></div></div>
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab')
+    return requested === 'salary' || requested === 'accounts' ? requested : 'general'
+  })
+  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, справочники и резервные копии."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button><button className={tab==='backups'?'active':''} onClick={() => setTab('backups')}><DatabaseBackup/> Резервные копии</button></aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'backups' && <Backups/>}</section></div></div>
 }
 
 function GeneralSettings() {

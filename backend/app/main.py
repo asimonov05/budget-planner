@@ -13,7 +13,7 @@ from starlette.applications import Starlette
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .api import auth, catalog, finance, io
+from .api import auth, catalog, finance, io, salary
 from .admin_panel import install_debug_admin
 from .config import config
 from .db import verify_database
@@ -45,7 +45,9 @@ async def request_id(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request.state.request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Referrer-Policy"] = (
+        "same-origin" if request.url.path.startswith("/admin/") else "no-referrer"
+    )
     return response
 
 
@@ -72,6 +74,7 @@ def ready() -> dict:
 api.include_router(auth.router)
 api.include_router(catalog.router)
 api.include_router(finance.router)
+api.include_router(salary.router)
 api.include_router(io.router)
 app.include_router(api)
 

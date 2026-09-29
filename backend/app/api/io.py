@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from .. import __version__
 from ..config import config
+from ..core.ru_payroll import SalaryRule as PayrollRule, salary_payouts
 from ..db import get_db
 from ..models import (
     Account,
@@ -38,6 +39,8 @@ from ..models import (
     PlanItemTag,
     PlanMatch,
     PlanOverride,
+    SalaryMatch,
+    SalaryRule,
     Tag,
     Transaction,
     TransactionTag,
@@ -613,6 +616,8 @@ EXPORT_MODELS = [
     PlanItemTag,
     PlanOverride,
     PlanMatch,
+    SalaryRule,
+    SalaryMatch,
     BudgetLimit,
     BudgetLimitOverride,
     GoalReserveMovement,
@@ -621,6 +626,7 @@ EXPORT_MODELS = [
 ]
 
 LEGACY_V1_COLUMNS = {
+    AppSettings: {"salary_enabled": False},
     Category: {"monthly_estimate": False},
     Transaction: {
         "loan_id": None,
@@ -638,7 +644,8 @@ LEGACY_V1_COLUMNS = {
         "annuity_payment_minor": None,
     },
 }
-LEGACY_V2_COLUMNS = {Category: {"monthly_estimate": False}}
+LEGACY_V2_COLUMNS = {AppSettings: {"salary_enabled": False}, Category: {"monthly_estimate": False}}
+LEGACY_V3_COLUMNS = {AppSettings: {"salary_enabled": False}}
 
 
 def model_rows(db: Session, model) -> list[dict]:
@@ -708,6 +715,7 @@ def validate_canonical_row(model, values: dict) -> None:
         GoalReserveMovement: {"kind": {"allocation", "release", "expense", "refund"}},
         LoanScheduleItem: {"status": {"planned", "partially_paid", "paid", "cancelled"}},
         BudgetMonth: {"status": {"open", "closed"}},
+        SalaryMatch: {"component": {"advance", "salary"}},
     }
     for field, allowed in allowed_values.get(model, {}).items():
         if values.get(field) not in allowed:
@@ -786,6 +794,20 @@ def validate_canonical_row(model, values: dict) -> None:
             raise ValueError("invalid plan match month")
         if values["amount_minor"] <= 0:
             raise ValueError("plan match amount must be positive")
+    elif model is SalaryRule:
+        if not values["name"].strip() or values["gross_minor"] <= 0:
+            raise ValueError("invalid salary rule")
+        if not 0 < values["advance_share_bps"] < 10_000 or not 16 <= values["advance_day"] <= 31 or not 1 <= values["salary_day"] <= 15:
+            raise ValueError("invalid salary payout schedule")
+        if not MONTH_PATTERN.fullmatch(values["start_month"]) or (values["end_month"] and (not MONTH_PATTERN.fullmatch(values["end_month"]) or values["end_month"] < values["start_month"])):
+            raise ValueError("invalid salary period")
+        if not 2025 <= int(values["start_month"][:4]) <= 2100 or (values["end_month"] and not 2025 <= int(values["end_month"][:4]) <= 2100):
+            raise ValueError("invalid salary year")
+        if values["initial_tax_base_minor"] < 0 or (values["initial_tax_base_minor"] and values["initial_tax_year"] != int(values["start_month"][:4])):
+            raise ValueError("invalid initial salary tax base")
+    elif model is SalaryMatch:
+        if not MONTH_PATTERN.fullmatch(values["earning_month"]) or values["amount_minor"] <= 0:
+            raise ValueError("invalid salary match")
     elif model in (BudgetLimit, BudgetLimitOverride):
         if values["amount_minor"] < 0:
             raise ValueError("budget limit cannot be negative")
@@ -866,6 +888,37 @@ def validate_canonical_relationships(db: Session) -> None:
             )
         ):
             raise ValueError("invalid plan-to-transaction match")
+    plan_transaction_ids = {match.transaction_id for match in db.scalars(select(PlanMatch)).all()}
+    for rule in db.scalars(select(SalaryRule)).all():
+        account = db.get(Account, rule.account_id) if rule.account_id else None
+        category = db.get(Category, rule.category_id) if rule.category_id else None
+        if not account or (rule.category_id and (not category or category.kind != "income")):
+            raise ValueError("salary rule references invalid account or category")
+    salary_matches = db.scalars(select(SalaryMatch)).all()
+    payout_amounts: dict[tuple[int, str, str], int] = {}
+    matched_amounts: dict[tuple[int, str, str], int] = {}
+    for rule in db.scalars(select(SalaryRule)).all():
+        rule_matches = [match for match in salary_matches if match.salary_rule_id == rule.id]
+        if not rule_matches:
+            continue
+        through = max(match.earning_month for match in rule_matches)
+        for payout in salary_payouts(PayrollRule(
+            gross_minor=rule.gross_minor, advance_share_bps=rule.advance_share_bps,
+            advance_day=rule.advance_day, salary_day=rule.salary_day,
+            start_month=rule.start_month, end_month=rule.end_month,
+            initial_tax_base_minor=rule.initial_tax_base_minor,
+            initial_tax_year=rule.initial_tax_year,
+        ), through):
+            payout_amounts[rule.id, payout.earning_month, payout.component] = payout.net_minor
+    for match in salary_matches:
+        rule = db.get(SalaryRule, match.salary_rule_id)
+        transaction = db.get(Transaction, match.transaction_id)
+        key = match.salary_rule_id, match.earning_month, match.component
+        matched_amounts[key] = matched_amounts.get(key, 0) + match.amount_minor
+        if not rule or not transaction or transaction.type != "income" or transaction.goal_id is not None or transaction.account_id != rule.account_id or match.amount_minor > transaction.amount_minor or match.transaction_id in plan_transaction_ids or key not in payout_amounts:
+            raise ValueError("invalid salary-to-transaction match")
+    if any(amount > payout_amounts[key] for key, amount in matched_amounts.items()):
+        raise ValueError("salary match exceeds net payout")
     for schedule_item in db.scalars(select(LoanScheduleItem)).all():
         payments = db.scalars(
             select(Transaction).where(
@@ -936,7 +989,7 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 3,
+            "schema_version": 4,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -957,7 +1010,6 @@ def import_project(
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="Archive exceeds 20 MiB")
-    expected = {f"{model.__tablename__}.csv" for model in EXPORT_MODELS} | {"manifest.json"}
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             listed_names = archive.namelist()
@@ -966,16 +1018,16 @@ def import_project(
                 raise HTTPException(status_code=422, detail="Archive contains duplicate file names")
             if any(Path(name).is_absolute() or ".." in Path(name).parts for name in names):
                 raise HTTPException(status_code=422, detail="Unsafe archive path")
-            if names != expected:
-                raise HTTPException(
-                    status_code=422, detail="Archive file list does not match schema"
-                )
             if sum(x.file_size for x in archive.infolist()) > 100 * 1024 * 1024:
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
             schema_version = manifest.get("schema_version")
-            if schema_version not in (1, 2, 3):
+            if schema_version not in (1, 2, 3, 4):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
+            models = EXPORT_MODELS if schema_version == 4 else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
+            expected = {f"{model.__tablename__}.csv" for model in models} | {"manifest.json"}
+            if names != expected:
+                raise HTTPException(status_code=422, detail="Archive file list does not match schema")
             if set(manifest.get("files", [])) != expected - {"manifest.json"}:
                 raise HTTPException(
                     status_code=422, detail="Manifest file list does not match archive"
@@ -999,6 +1051,8 @@ def import_project(
                 if schema_version == 1
                 else LEGACY_V2_COLUMNS
                 if schema_version == 2
+                else LEGACY_V3_COLUMNS
+                if schema_version == 3
                 else {}
             )
             created = {}
@@ -1034,7 +1088,7 @@ def import_project(
                         payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 3, "created": created}
+            return {"schema_version": 4, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
     except (UnicodeError, ValueError, csv.Error, json.JSONDecodeError) as exc:

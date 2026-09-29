@@ -103,15 +103,17 @@ def _password_fingerprint(password_hash: str) -> str:
 
 
 def _same_origin(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    if not origin:
-        return False
-    origin_url = urlsplit(origin)
     request_url = urlsplit(str(request.url))
-    return (
-        origin_url.scheme == request_url.scheme
-        and origin_url.netloc == request_url.netloc
-    )
+    fetch_site = request.headers.get("sec-fetch-site")
+    if fetch_site == "cross-site":
+        return False
+    if fetch_site == "same-origin":
+        return True
+    source_url = request.headers.get("origin") or request.headers.get("referer")
+    if not source_url:
+        return False
+    source = urlsplit(source_url)
+    return source.scheme == request_url.scheme and source.netloc == request_url.netloc
 
 
 class OwnerAdminAuthentication(AuthenticationBackend):

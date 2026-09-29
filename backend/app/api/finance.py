@@ -37,6 +37,7 @@ from ..models import (
     LoanScheduleItem,
     PlanItem,
     PlanMatch,
+    SalaryMatch,
     PlanOverride,
     Tag,
     Transaction,
@@ -235,6 +236,10 @@ def list_transactions(
             else []
         )
     }
+    salary_matches = {
+        match.transaction_id: match
+        for match in (db.scalars(select(SalaryMatch).where(SalaryMatch.transaction_id.in_(page_ids))).all() if page_ids else [])
+    }
     items = []
     for transaction in page:
         item = TransactionOut.model_validate(transaction).model_dump(mode="json")
@@ -245,6 +250,13 @@ def list_transactions(
                 matched_occurrence_month=match.occurrence_month,
                 matched_amount_minor=match.amount_minor,
                 match_completed=match.completed,
+            )
+        salary_match = salary_matches.get(transaction.id)
+        if salary_match:
+            item.update(
+                matched_salary_rule_id=salary_match.salary_rule_id,
+                matched_salary_earning_month=salary_match.earning_month,
+                matched_salary_component=salary_match.component,
             )
         items.append(item)
     return {
@@ -389,12 +401,15 @@ def update_transaction(
             status_code=409,
             detail="Связанный с кредитом платёж нельзя изменить без пересчёта долга",
         )
+    if "date" in data and data["date"] != value.date and db.scalar(select(SalaryMatch.id).where(SalaryMatch.transaction_id == value.id)):
+        raise HTTPException(status_code=409, detail="Unmatch salary before changing receipt date")
     if "amount_minor" in data and value.type != "adjustment":
         matched_amount = db.scalar(
             select(func.coalesce(func.sum(PlanMatch.amount_minor), 0)).where(
                 PlanMatch.transaction_id == value.id
             )
         )
+        matched_amount += db.scalar(select(func.coalesce(func.sum(SalaryMatch.amount_minor), 0)).where(SalaryMatch.transaction_id == value.id)) or 0
         if data["amount_minor"] < matched_amount:
             raise HTTPException(
                 status_code=409,
@@ -450,6 +465,8 @@ def delete_transaction(
             status_code=409,
             detail="Transaction is matched to a plan item; remove the match before deleting it",
         )
+    if db.scalar(select(func.count()).select_from(SalaryMatch).where(SalaryMatch.transaction_id == entity_id)):
+        raise HTTPException(status_code=409, detail="Transaction is matched to a salary payment; remove the match first")
     if db.scalar(
         select(func.count())
         .select_from(GoalReserveMovement)
@@ -838,6 +855,8 @@ def match_plan(
         )
     if body.amount_minor > transaction.amount_minor:
         raise HTTPException(status_code=422, detail="Matched amount exceeds transaction amount")
+    if db.scalar(select(SalaryMatch.id).where(SalaryMatch.transaction_id == transaction.id)):
+        raise HTTPException(status_code=409, detail="Transaction is already matched to salary")
     overrides = {
         (override.plan_item_id, override.month): override
         for override in db.scalars(
