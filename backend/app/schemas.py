@@ -60,6 +60,13 @@ class CategoryCreate(BaseModel):
     kind: Literal["income", "expense"] = "expense"
     color: str | None = Field(None, max_length=16)
     sort_order: int = 0
+    monthly_estimate: bool = False
+
+    @model_validator(mode="after")
+    def estimate_requires_expense(self) -> "CategoryCreate":
+        if self.monthly_estimate and self.kind != "expense":
+            raise ValueError("monthly estimate is available only for expense categories")
+        return self
 
 
 class CategoryUpdate(VersionedUpdate):
@@ -67,6 +74,7 @@ class CategoryUpdate(VersionedUpdate):
     color: str | None = Field(None, max_length=16)
     sort_order: int | None = None
     archived: bool | None = None
+    monthly_estimate: bool | None = None
 
 
 class CategoryOut(ORMModel):
@@ -76,6 +84,7 @@ class CategoryOut(ORMModel):
     color: str | None
     sort_order: int
     archived: bool
+    monthly_estimate: bool
     version: int
 
 
@@ -269,6 +278,7 @@ class OverrideInput(BaseModel):
     amount_minor: int | None = Field(None, ge=0, le=MAX_SAFE_INTEGER)
     cancelled: bool = False
     moved_date: DateType | None = None
+    version: int | None = Field(None, ge=1)
 
 
 class MatchInput(BaseModel):

@@ -495,7 +495,7 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
         initial_balance_minor=50_000_00,
         initial_balance_date=date(2026, 1, 1),
     )
-    category = Category(name="Путешествия", kind="expense")
+    category = Category(name="Путешествия", kind="expense", monthly_estimate=True)
     tag = Tag(name="отпуск-2027")
     goal = Goal(name="Отпуск", target_amount_minor=150_000_00, initial_reserved_minor=30_000_00)
     db.add_all([savings, category, tag, goal])
@@ -560,6 +560,8 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
+    db.expire_all()
+    assert db.get(Category, category.id).monthly_estimate is True
 
     actual_counts = {
         model.__tablename__: db.scalar(select(func.count()).select_from(model)) or 0
@@ -601,6 +603,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
     assert exported.status_code == 200
     legacy = io.BytesIO()
     removed = {
+        "categories.csv": {"monthly_estimate"},
         "loans.csv": {
             "annual_rate_bps",
             "interest_method",
@@ -647,7 +650,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 2
+    assert imported.json()["schema_version"] == 3
     db.expire_all()
     restored_loan = db.scalar(select(Loan))
     restored_payment = db.scalar(
@@ -655,6 +658,47 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
     )
     assert restored_loan.schedule_mode == "manual"
     assert restored_payment.loan_id == restored_loan.id
+
+
+def test_version_2_project_archive_defaults_monthly_category_estimate(client, auth, account, db):
+    db.add(Category(name="Продукты", kind="expense"))
+    db.commit()
+    exported = client.get("/api/v1/exports/project")
+    assert exported.status_code == 200
+    legacy = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(exported.content)) as source,
+        zipfile.ZipFile(legacy, "w") as destination,
+    ):
+        for name in source.namelist():
+            if name == "manifest.json":
+                manifest = json.loads(source.read(name))
+                manifest["schema_version"] = 2
+                destination.writestr(name, json.dumps(manifest))
+            elif name == "categories.csv":
+                reader = csv.DictReader(io.StringIO(source.read(name).decode("utf-8")))
+                fields = [field for field in reader.fieldnames or [] if field != "monthly_estimate"]
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=fields)
+                writer.writeheader()
+                for row in reader:
+                    writer.writerow({field: row[field] for field in fields})
+                destination.writestr(name, output.getvalue())
+            else:
+                destination.writestr(name, source.read(name))
+
+    for model in reversed(EXPORT_MODELS):
+        db.execute(delete(model))
+    db.commit()
+    imported = client.post(
+        "/api/v1/imports/project",
+        files={"file": ("version2.zip", legacy.getvalue(), "application/zip")},
+        headers=auth,
+    )
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["schema_version"] == 3
+    db.expire_all()
+    assert db.scalar(select(Category).where(Category.name == "Продукты")).monthly_estimate is False
 
 
 def test_project_import_rejects_traversal(client, auth):

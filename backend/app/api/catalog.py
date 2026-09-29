@@ -269,7 +269,15 @@ def update_category(
         missing("Category")
     if value.version != body.version:
         conflict()
-    for key, val in body.model_dump(exclude_unset=True, exclude={"version"}).items():
+    data = body.model_dump(exclude_unset=True, exclude={"version"})
+    if "monthly_estimate" in data and (
+        data["monthly_estimate"] is None or (data["monthly_estimate"] and value.kind != "expense")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Ежемесячная оценка доступна только для категорий расходов",
+        )
+    for key, val in data.items():
         setattr(value, key, val)
     value.version += 1
     db.commit()

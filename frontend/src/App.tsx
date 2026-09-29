@@ -13,7 +13,6 @@ import { AnalyticsPage } from './pages/Analytics'
 import { ExchangePage } from './pages/Exchange'
 import { SettingsPage } from './pages/Settings'
 import { CalendarPage } from './pages/Calendar'
-import { DebugAdminPage } from './pages/DebugAdmin'
 
 async function loadCurrentUser(): Promise<User | null> {
   try {
@@ -49,7 +48,6 @@ export function App() {
       <Route path="analytics" element={<AnalyticsPage />} />
       <Route path="exchange" element={<ExchangePage />} />
       <Route path="settings" element={<SettingsPage />} />
-      <Route path="admin/debug" element={<DebugAdminPage />} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

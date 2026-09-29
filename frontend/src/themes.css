@@ -529,6 +529,15 @@ input[type='radio'] {
   background: var(--surface-summary);
 }
 
+.row-dot--estimate {
+  background: var(--gold);
+}
+
+.plan-row--estimate td,
+.plan-row--estimate td:first-child {
+  background: var(--surface-subtle);
+}
+
 .plan-row--total td,
 .plan-row--total td:first-child {
   background: var(--surface-total);
@@ -557,6 +566,47 @@ input[type='radio'] {
 
 .calendar-event--income {
   color: var(--good-ink);
+}
+
+.calendar-event {
+  width: 100%;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.calendar-event:hover,
+.undated-item:hover {
+  filter: brightness(.96);
+}
+
+.calendar-event:focus-visible,
+.undated-item:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.undated-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.undated-item span {
+  display: flex;
+  flex-direction: column;
 }
 
 .tabs button.active,

@@ -82,6 +82,29 @@ describe('settings directories', () => {
     expect(document.documentElement).toHaveAttribute('data-font', 'golos')
   })
 
+  it('marks an expense category for monthly estimates', async () => {
+    fetchMock.mockClear()
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/v1/settings') return jsonResponse({ currency: 'RUB', timezone: 'Europe/Moscow', accounting_start_date: '2026-01-01', version: 1 })
+      if (path === '/api/v1/categories?include_archived=true') return jsonResponse({ items: [{ id: 4, name: 'Продукты', kind: 'expense', color: '#557a5d', monthly_estimate: false, archived: false, version: 1 }], total: 1 })
+      if (path === '/api/v1/categories/4' && init?.method === 'PATCH') return jsonResponse({ id: 4, name: 'Продукты', monthly_estimate: true, version: 2 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    renderSettings()
+    fireEvent.click(screen.getByRole('button', { name: /Категории/ }))
+    await screen.findByText('Продукты')
+    fireEvent.click(screen.getByRole('button', { name: 'Изменить Продукты' }))
+    const toggle = screen.getByRole('checkbox', { name: /Оценивать расход каждый месяц/ })
+    expect(toggle).not.toBeChecked()
+    fireEvent.click(toggle)
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/categories/4' && request?.method === 'PATCH')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, options]) => url === '/api/v1/categories/4' && options?.method === 'PATCH')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ monthly_estimate: true, version: 1 }))
+  })
+
   it('archives, restores and hard-deletes with the current version', async () => {
     renderSettings()
     fireEvent.click(screen.getByRole('button', { name: /Счета/ }))

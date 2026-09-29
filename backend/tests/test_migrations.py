@@ -45,7 +45,7 @@ def test_alembic_creates_and_reopens_file_database(tmp_path: Path, monkeypatch):
 
     assert {"accounts", "transactions", "goals", "alembic_version"} <= tables
     assert "future_model_table" not in tables
-    assert revision == ("0002",)
+    assert revision == ("0003",)
     assert foreign_key_errors == []
 
     engine = create_engine(f"sqlite:///{database}")
@@ -72,11 +72,11 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
             ("owner", "hash", "2026-01-01 00:00:00"),
         )
 
-    (versions / "versions" / "0003_test.py").write_text(
+    (versions / "versions" / "0004_test.py").write_text(
         "from alembic import op\n"
         "import sqlalchemy as sa\n"
-        "revision = '0003_test'\n"
-        "down_revision = '0002'\n"
+        "revision = '0004_test'\n"
+        "down_revision = '0003'\n"
         "branch_labels = None\n"
         "depends_on = None\n"
         "def upgrade():\n"
@@ -88,7 +88,7 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
     command.upgrade(alembic, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0003_test",
+            "0004_test",
         )
         assert connection.execute("SELECT username, display_name FROM users").fetchone() == (
             "owner",
@@ -109,6 +109,11 @@ def test_loan_migration_preserves_existing_plan_matches(tmp_path: Path):
             "INSERT INTO accounts "
             "(id, name, type, initial_balance_minor, initial_balance_date, archived, created_at, updated_at, version) "
             "VALUES (1, 'Счёт', 'bank', 100000, '2026-01-01', 0, '2026-01-01', '2026-01-01', 1)"
+        )
+        connection.execute(
+            "INSERT INTO categories "
+            "(id, name, kind, sort_order, archived, created_at, updated_at, version) "
+            "VALUES (1, 'Еда', 'expense', 0, 0, '2026-01-01', '2026-01-01', 1)"
         )
         connection.execute(
             "INSERT INTO plan_items "
@@ -148,6 +153,9 @@ def test_loan_migration_preserves_existing_plan_matches(tmp_path: Path):
         assert connection.execute("SELECT loan_id FROM transactions WHERE id = 2").fetchone() == (
             1,
         )
+        assert connection.execute(
+            "SELECT monthly_estimate FROM categories WHERE id = 1"
+        ).fetchone() == (0,)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
     command.downgrade(alembic, "0001")

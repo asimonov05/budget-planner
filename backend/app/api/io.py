@@ -621,6 +621,7 @@ EXPORT_MODELS = [
 ]
 
 LEGACY_V1_COLUMNS = {
+    Category: {"monthly_estimate": False},
     Transaction: {
         "loan_id": None,
         "principal_component_minor": None,
@@ -637,6 +638,7 @@ LEGACY_V1_COLUMNS = {
         "annuity_payment_minor": None,
     },
 }
+LEGACY_V2_COLUMNS = {Category: {"monthly_estimate": False}}
 
 
 def model_rows(db: Session, model) -> list[dict]:
@@ -714,6 +716,9 @@ def validate_canonical_row(model, values: dict) -> None:
     if model is AppSettings:
         if not re.fullmatch(r"[A-Z]{3}", values["currency"]):
             raise ValueError("invalid settings currency")
+    elif model is Category:
+        if values["monthly_estimate"] and values["kind"] != "expense":
+            raise ValueError("monthly estimate requires an expense category")
     elif model is Transaction:
         if values["type"] == "adjustment" and values["amount_minor"] == 0:
             raise ValueError("balance adjustment cannot be zero")
@@ -931,7 +936,7 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 2,
+            "schema_version": 3,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -969,7 +974,7 @@ def import_project(
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
             schema_version = manifest.get("schema_version")
-            if schema_version not in (1, 2):
+            if schema_version not in (1, 2, 3):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
             if set(manifest.get("files", [])) != expected - {"manifest.json"}:
                 raise HTTPException(
@@ -989,6 +994,13 @@ def import_project(
             # It must not make a canonical restore impossible; the imported row
             # replaces it within the same all-or-nothing transaction.
             db.execute(delete(AppSettings))
+            legacy_columns = (
+                LEGACY_V1_COLUMNS
+                if schema_version == 1
+                else LEGACY_V2_COLUMNS
+                if schema_version == 2
+                else {}
+            )
             created = {}
             for model in EXPORT_MODELS:
                 name = f"{model.__tablename__}.csv"
@@ -1003,12 +1015,8 @@ def import_project(
                         raise ValueError(f"{name} contains an oversized field")
                     values = {}
                     for column in model.__table__.columns:
-                        if (
-                            schema_version == 1
-                            and column.name not in raw
-                            and column.name in LEGACY_V1_COLUMNS.get(model, {})
-                        ):
-                            values[column.name] = LEGACY_V1_COLUMNS[model][column.name]
+                        if column.name not in raw and column.name in legacy_columns.get(model, {}):
+                            values[column.name] = legacy_columns[model][column.name]
                         else:
                             values[column.name] = canonical_value(column, raw.get(column.name))
                     validate_canonical_row(model, values)
@@ -1026,7 +1034,7 @@ def import_project(
                         payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 2, "created": created}
+            return {"schema_version": 3, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
     except (UnicodeError, ValueError, csv.Error, json.JSONDecodeError) as exc:

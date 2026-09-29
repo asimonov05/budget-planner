@@ -82,6 +82,7 @@ class Category(Base, TimestampVersionMixin):
     color: Mapped[str | None] = mapped_column(String(16))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    monthly_estimate: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class Tag(Base, TimestampVersionMixin):

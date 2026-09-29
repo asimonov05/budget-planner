@@ -9,10 +9,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm.exc import StaleDataError
+from starlette.applications import Starlette
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .api import admin, auth, catalog, finance, io
+from .api import auth, catalog, finance, io
+from .admin_panel import install_debug_admin
 from .config import config
 from .db import verify_database
 from .errors import (
@@ -68,11 +70,15 @@ def ready() -> dict:
 
 
 api.include_router(auth.router)
-api.include_router(admin.router)
 api.include_router(catalog.router)
 api.include_router(finance.router)
 api.include_router(io.router)
 app.include_router(api)
+
+if config.debug_admin_enabled:
+    install_debug_admin(app)
+else:
+    app.mount("/admin", Starlette(), name="disabled-admin")
 
 
 if config.static_dir and config.static_dir.is_dir():

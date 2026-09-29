@@ -28,15 +28,13 @@ export function Layout() {
   const navigate = useNavigate(); const queryClient = useQueryClient()
   const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api<User>('/auth/me') })
   const logout = useMutation({ mutationFn: () => api('/auth/logout', { method: 'POST' }), onSuccess: () => { queryClient.clear(); navigate('/login') } })
-  const visibleNavigation = me.data?.debug_admin_enabled
-    ? [...navigation, { to: '/admin/debug', label: 'Админка · debug', icon: Bug }]
-    : navigation
   return <div className={`app-shell ${compact ? 'is-compact' : ''}`}>
     <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
       <div className="brand"><div className="brand-mark">К</div><div className="brand-copy"><strong>Контур</strong><span>Личный бюджет</span></div><button className="mobile-close icon-button" onClick={() => setMobileOpen(false)}><X /></button></div>
-      <nav aria-label="Основное меню">{visibleNavigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}</nav>
+      <nav aria-label="Основное меню">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}</nav>
       <div className="sidebar-bottom">
         <button className="sidebar-action" onClick={() => setCompact((v) => !v)}>{compact ? <ChevronRight /> : <PanelLeftClose />}<span>Свернуть</span></button>
+        {me.data?.debug_admin_enabled && <a className="sidebar-action" href="/admin/"><Bug/><span>Админка</span></a>}
         <button className="sidebar-action" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut/><span>Выйти</span></button>
       </div>
     </aside>

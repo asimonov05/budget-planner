@@ -15,6 +15,8 @@ from ..core.calculations import (
     effective_plan_amount,
     goal_remaining_need,
     goal_reserved,
+    occurrence_date,
+    occurs_in_month,
     projected_plan_occurrences,
     split_evenly,
 )
@@ -587,6 +589,10 @@ def list_plan_items(
             value["amount_minor"] = amount
             value["date"] = projected_date.isoformat() if projected_date else None
             value["occurrence_month"] = nominal_month
+            base_date = occurrence_date(item, nominal_month)
+            value["base_amount_minor"] = item.amount_minor
+            value["base_date"] = base_date.isoformat() if base_date else None
+            value["has_override"] = (item.id, nominal_month) in overrides
             projected.append(value)
     return {"items": projected, "total": len(projected)}
 
@@ -751,8 +757,21 @@ def set_override(
     ensure_open(db, month_date(month))
     if body.moved_date:
         ensure_open(db, body.moved_date)
-    if not db.get(PlanItem, entity_id):
+    item = db.get(PlanItem, entity_id)
+    if not item:
         missing("Plan item")
+    if body.version is not None:
+        ensure_version(item, body.version)
+    if not occurs_in_month(item, month):
+        raise HTTPException(
+            status_code=422, detail="У этой записи нет повторения в выбранном месяце"
+        )
+    if db.scalar(
+        select(func.count())
+        .select_from(PlanMatch)
+        .where(PlanMatch.plan_item_id == entity_id, PlanMatch.occurrence_month == month)
+    ):
+        raise HTTPException(status_code=409, detail="Сверенное повторение нельзя изменить")
     existing = db.scalar(
         select(PlanOverride).where(
             PlanOverride.plan_item_id == entity_id, PlanOverride.month == month
@@ -762,8 +781,14 @@ def set_override(
     if body.amount_minor is None and not body.cancelled and body.moved_date is None:
         if existing:
             db.delete(existing)
+            item.version += 1
         db.commit()
-        return {"plan_item_id": entity_id, "month": month, "inherited": True}
+        return {
+            "plan_item_id": entity_id,
+            "month": month,
+            "inherited": True,
+            "version": item.version,
+        }
     value = existing or PlanOverride(plan_item_id=entity_id, month=month)
     value.amount_minor, value.cancelled, value.moved_date = (
         body.amount_minor,
@@ -771,6 +796,7 @@ def set_override(
         body.moved_date,
     )
     db.add(value)
+    item.version += 1
     db.commit()
     db.refresh(value)
     return {
@@ -780,6 +806,7 @@ def set_override(
         "amount_minor": value.amount_minor,
         "cancelled": value.cancelled,
         "moved_date": value.moved_date,
+        "version": item.version,
     }
 
 

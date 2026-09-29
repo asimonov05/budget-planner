@@ -3,7 +3,8 @@ from __future__ import annotations
 import calendar
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from ..models import (
     BudgetLimit,
     BudgetLimitOverride,
     BudgetMonth,
+    Category,
     Goal,
     GoalReserveMovement,
     Loan,
@@ -25,6 +27,8 @@ from ..models import (
 )
 from .loans import PaymentRow, monthly_dates, project_loan
 
+MONTHLY_ESTIMATE_WINDOW = 3
+
 
 def month_key(value: date) -> str:
     return value.strftime("%Y-%m")
@@ -34,6 +38,38 @@ def add_months(value: str, count: int) -> str:
     year, month = map(int, value.split("-"))
     total = year * 12 + month - 1 + count
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
+
+
+def monthly_category_average(
+    spend_by_month: dict[tuple[int, str], int],
+    category_id: int,
+    target_month: str,
+    current_month: str,
+    accounting_start_month: str,
+    window: int = MONTHLY_ESTIMATE_WINDOW,
+) -> tuple[int | None, int]:
+    """Average completed calendar months before the target, including zero months."""
+    anchor = min(target_month, current_month)
+    months = [
+        month
+        for offset in range(window, 0, -1)
+        if (month := add_months(anchor, -offset)) >= accounting_start_month
+    ]
+    if not months:
+        return None, 0
+    total = sum(max(0, spend_by_month.get((category_id, month), 0)) for month in months)
+    average, remainder = divmod(total, len(months))
+    return average + (2 * remainder >= len(months)), len(months)
+
+
+def app_current_month(settings: AppSettings | None, as_of: date | None = None) -> str:
+    if as_of is not None:
+        return month_key(as_of)
+    try:
+        zone = ZoneInfo(settings.timezone if settings else "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = timezone.utc
+    return month_key(datetime.now(zone).date())
 
 
 def occurrence_date(item: PlanItem, month: str) -> date | None:
@@ -121,6 +157,9 @@ class CategoryDetail:
     unallocated_minor: int = 0
     forecast_minor: int = 0
     exceeded_minor: int = 0
+    estimated_monthly_minor: int | None = None
+    estimated_from_months: int = 0
+    estimated_added_minor: int = 0
 
 
 @dataclass
@@ -135,6 +174,7 @@ class MonthResult:
     actual_expense: int = 0
     expected_income: int = 0
     expected_expense: int = 0
+    estimated_expense_minor: int = 0
     goal_allocations: int = 0
     goal_releases: int = 0
     goal_expenses: int = 0
@@ -150,17 +190,27 @@ class MonthResult:
 
 
 def calculate_forecast(
-    db: Session, from_month: str, months: int, include_possible: bool = False
+    db: Session,
+    from_month: str,
+    months: int,
+    include_possible: bool = False,
+    *,
+    as_of: date | None = None,
 ) -> dict:
     requested = [add_months(from_month, i) for i in range(months)]
     accounts = db.scalars(select(Account)).all()
     if not accounts:
         return {"from_month": from_month, "months": [], "warnings": ["no_accounts"]}
     settings = db.get(AppSettings, 1)
+    current_month = app_current_month(settings, as_of)
     reserve_start_month = (
         month_key(settings.accounting_start_date)
         if settings
         else min(month_key(account.initial_balance_date) for account in accounts)
+    )
+    history_start_month = max(
+        reserve_start_month,
+        min(month_key(account.initial_balance_date) for account in accounts),
     )
     first_month = min(
         min(month_key(account.initial_balance_date) for account in accounts),
@@ -181,6 +231,7 @@ def calculate_forecast(
             Transaction.type,
             Transaction.category_id,
             Transaction.goal_id,
+            Transaction.loan_id,
             func.sum(Transaction.amount_minor).label("amount_minor"),
             func.count(Transaction.id).label("transaction_count"),
         )
@@ -193,11 +244,29 @@ def calculate_forecast(
             Transaction.type,
             Transaction.category_id,
             Transaction.goal_id,
+            Transaction.loan_id,
         )
     ).all()
     transactions_by_month: dict[str, list] = defaultdict(list)
+    ordinary_spend_by_month: dict[tuple[int, str], int] = defaultdict(int)
     for transaction in transaction_rows:
         transactions_by_month[transaction.month].append(transaction)
+        if (
+            transaction.category_id is not None
+            and transaction.goal_id is None
+            and transaction.loan_id is None
+            and transaction.type in ("expense", "refund")
+        ):
+            ordinary_spend_by_month[(transaction.category_id, transaction.month)] += (
+                transaction.amount_minor
+                if transaction.type == "expense"
+                else -transaction.amount_minor
+            )
+    monthly_categories = {
+        category.id: category
+        for category in db.scalars(select(Category)).all()
+        if category.kind == "expense" and category.monthly_estimate and not category.archived
+    }
     plan_items = db.scalars(select(PlanItem)).all()
     overrides = {(o.plan_item_id, o.month): o for o in db.scalars(select(PlanOverride)).all()}
     matches_by_occurrence: dict[tuple[int, str], list[PlanMatch]] = defaultdict(list)
@@ -271,6 +340,7 @@ def calculate_forecast(
             month=month, c_start=c, r_start=r, f_start=c - r, closed=month in closed
         )
         category_actual: dict[int, int] = defaultdict(int)
+        category_ordinary_actual: dict[int, int] = defaultdict(int)
         category_expected: dict[int, int] = defaultdict(int)
 
         for tx in transactions_by_month.get(month, []):
@@ -290,11 +360,15 @@ def calculate_forecast(
                 result.actual_expense += tx.amount_minor
                 if tx.goal_id is None and tx.category_id:
                     category_actual[tx.category_id] += tx.amount_minor
+                    if tx.loan_id is None:
+                        category_ordinary_actual[tx.category_id] += tx.amount_minor
             elif tx.type == "refund":
                 result.expense -= tx.amount_minor
                 result.actual_expense -= tx.amount_minor
                 if tx.goal_id is None and tx.category_id:
                     category_actual[tx.category_id] -= tx.amount_minor
+                    if tx.loan_id is None:
+                        category_ordinary_actual[tx.category_id] -= tx.amount_minor
             elif tx.type == "adjustment":
                 result.adjustments += tx.amount_minor
 
@@ -383,7 +457,7 @@ def calculate_forecast(
                         }
                     )
 
-            category_ids = set(category_actual) | set(category_expected)
+            category_ids = set(category_actual) | set(category_expected) | set(monthly_categories)
             for limit in limits:
                 if limit.start_month <= month and (not limit.end_month or month <= limit.end_month):
                     category_ids.add(limit.category_id)
@@ -401,14 +475,47 @@ def calculate_forecast(
                 if applicable:
                     chosen = max(applicable, key=lambda x: x.start_month)
                     effective_limit = limit_overrides.get((chosen.id, month), chosen.amount_minor)
-                unallocated = (
+                budget_gap = (
                     max(0, (effective_limit or 0) - actual - expected)
                     if effective_limit is not None
                     else 0
                 )
+                estimated, sample_months = (
+                    monthly_category_average(
+                        ordinary_spend_by_month,
+                        category_id,
+                        month,
+                        current_month,
+                        history_start_month,
+                    )
+                    if category_id in monthly_categories
+                    else (None, 0)
+                )
+                estimated_gap = (
+                    max(0, estimated - category_ordinary_actual[category_id] - expected)
+                    if estimated is not None
+                    else 0
+                )
+                # The estimate fills only spending not already covered by facts,
+                # plans, or the explicit category limit.
+                unallocated = max(budget_gap, estimated_gap)
+                estimated_added = max(0, estimated_gap - budget_gap)
                 forecast = actual + expected + unallocated
                 result.expense += expected + unallocated
                 result.expected_expense += expected + unallocated
+                result.estimated_expense_minor += estimated_added
+                if estimated_added:
+                    result.incomplete = True
+                    result.details.append(
+                        {
+                            "source": "monthly_category_estimate",
+                            "category_id": category_id,
+                            "kind": "expense",
+                            "amount_minor": estimated_added,
+                            "monthly_average_minor": estimated,
+                            "sample_months": sample_months,
+                        }
+                    )
                 result.category_details.append(
                     CategoryDetail(
                         category_id=category_id,
@@ -420,6 +527,9 @@ def calculate_forecast(
                         exceeded_minor=max(0, forecast - effective_limit)
                         if effective_limit is not None
                         else 0,
+                        estimated_monthly_minor=estimated,
+                        estimated_from_months=sample_months,
+                        estimated_added_minor=estimated_added,
                     ).__dict__
                 )
 
