@@ -161,17 +161,16 @@ FORWARDED_ALLOW_IPS=127.0.0.1
 
 ## Разработка и проверки
 
-Поддерживаемое окружение разработки: Python 3.13 и Node.js 22. Создайте чистое окружение из зафиксированных lock-файлов:
+Поддерживаемое окружение разработки: uv, Python 3.13 и Node.js 22. Создайте окружение из `pyproject.toml` и зафиксированного `uv.lock`:
 
 ```bash
-python3.13 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --project backend
 npm --prefix frontend ci
 npm --prefix e2e ci
 npx --prefix e2e playwright install chromium
 ```
 
-`requirements-dev.txt` включает полностью закрепленный production-набор из `requirements.lock`; оба npm-проекта устанавливаются через свои `package-lock.json`.
+`uv sync` создаёт окружение в `backend/.venv` и устанавливает runtime- и dev-зависимости из `backend/uv.lock`. Frontend и E2E используют отдельные `package-lock.json`.
 
 Схема `0001` зафиксирована в `backend/alembic/versions/0001_initial.py`. При изменении моделей добавляйте следующую ревизию Alembic с явными операциями изменения схемы; не меняйте уже применённую `0001`. Проверка `backend/tests/test_migrations.py` сверяет новую базу с моделями и проверяет обновление базы с существующей ревизией `0001`.
 

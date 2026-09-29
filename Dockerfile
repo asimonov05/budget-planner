@@ -2,6 +2,9 @@
 
 ARG NODE_IMAGE=node:22.19.0-alpine3.22
 ARG PYTHON_IMAGE=python:3.13.15-alpine3.24
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.19
+
+FROM ${UV_IMAGE} AS uv
 
 FROM ${NODE_IMAGE} AS frontend-build
 ENV NPM_CONFIG_AUDIT=false \
@@ -20,11 +23,16 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM ${PYTHON_IMAGE} AS backend-build
-WORKDIR /build
+COPY --from=uv /uv /uvx /bin/
 RUN apk add --no-cache build-base libffi-dev
-COPY backend/requirements.lock ./requirements.lock
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m pip wheel --wheel-dir=/wheels --requirement requirements.lock
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    UV_PYTHON_DOWNLOADS=0
+WORKDIR /app
+COPY backend/pyproject.toml backend/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv sync --locked --no-dev --no-install-project
 
 FROM ${PYTHON_IMAGE} AS runtime
 
@@ -36,7 +44,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATABASE_PATH=/data/budget.sqlite3 \
     BACKUP_DIR=/backups \
     STATIC_DIR=/app/static \
-    REQUIRE_SAFE_SQLITE=1
+    REQUIRE_SAFE_SQLITE=1 \
+    PATH=/app/.venv/bin:$PATH
 
 RUN apk add --no-cache libffi sqlite-libs \
     && addgroup -S -g "${APP_GID}" budget \
@@ -45,11 +54,8 @@ RUN apk add --no-cache libffi sqlite-libs \
     && chown -R budget:budget /app /data /backups
 
 WORKDIR /app
-COPY --from=backend-build /wheels /wheels
-COPY backend/requirements.lock ./requirements.lock
-RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels --requirement requirements.lock \
-    && rm -rf /wheels \
-    && python -c 'import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3), sqlite3.sqlite_version'
+COPY --from=backend-build --chown=budget:budget /app/.venv /app/.venv
+RUN python -c 'import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3), sqlite3.sqlite_version'
 
 COPY --chown=budget:budget backend/ ./
 COPY --from=frontend-build --chown=budget:budget /src/frontend/dist/ ./static/

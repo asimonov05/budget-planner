@@ -2,24 +2,23 @@
 
 ## Воспроизводимое окружение разработчика
 
-Используйте Python 3.13 и Node.js 22. Зависимости должны устанавливаться из репозиторных lock-файлов, а не обновляться попутно:
+Используйте uv, Python 3.13 и Node.js 22. Зависимости должны устанавливаться из репозиторных lock-файлов, а не обновляться попутно:
 
 ```bash
-python3.13 -m venv .venv
-.venv/bin/python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --project backend
 npm --prefix frontend ci
 npm --prefix e2e ci
 npx --prefix e2e playwright install chromium
 ```
 
-`backend/requirements-dev.txt` включает полностью закрепленный `backend/requirements.lock`. Frontend и E2E используют отдельные `package-lock.json`. В Dockerfile также закреплены Python 3.13 и Node 22, но успешные локальные unit-тесты не заменяют сборку и smoke именно текущего образа.
+`backend/pyproject.toml` описывает runtime- и dev-зависимости, а `backend/uv.lock` фиксирует весь граф. Frontend и E2E используют отдельные `package-lock.json`. В Dockerfile также закреплены версии uv, Python 3.13 и Node 22, но успешные локальные unit-тесты не заменяют сборку и smoke именно текущего образа.
 
 Для локальной разработки без Docker запустите API и Vite в двух терминалах. База этого режима будет находиться в `backend/budget.sqlite3`:
 
 ```bash
 cd backend
-../.venv/bin/python -m app.cli init-admin
-../.venv/bin/python -m app.start
+uv run --locked python -m app.cli init-admin
+uv run --locked python -m app.start
 ```
 
 ```bash
@@ -80,7 +79,7 @@ npm --prefix e2e test
 В репозитории есть воспроизводимый синтетический fixture. Два локальных прогона 21 сентября 2026 года после одного прогрева и 20 замеров дали p50 `0,0598–0,0617 с` и p95 `0,0649–0,0675 с`:
 
 ```bash
-PYTHONPATH=backend .venv/bin/python backend/scripts/benchmark_forecast.py
+uv run --locked --project backend --directory backend python scripts/benchmark_forecast.py
 ```
 
 Скрипт каждый раз создает временную файловую SQLite, один счет, 100 000 расходных операций, считает окно 24 месяца и печатает параметры и результат. Это подтверждает время расчетного ядра на машине прогона, но еще не полностью закрывает production-критерий: RSS, CPU/модель машины, digest образа и отдельный запуск с лимитом 2 vCPU / 2 GiB не зафиксированы.

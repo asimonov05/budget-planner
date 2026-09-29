@@ -1,5 +1,0 @@
--r requirements.lock
-pytest==8.4.2
-httpx==0.28.1
-hypothesis==6.138.15
-ruff==0.12.11

@@ -1,9 +1,13 @@
-PYTHON ?= .venv/bin/python
+UV ?= uv
+PYTHON ?= backend/.venv/bin/python
 SMOKE_PROJECT ?= budget-planner-smoke
 SMOKE_PORT ?= 18080
 SMOKE_ENV = BIND_HOST=127.0.0.1 APP_PORT=$(SMOKE_PORT) TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=smoke
 
-.PHONY: test test-backend test-frontend lint lint-backend lint-frontend build build-frontend compose-config test-e2e smoke acceptance
+.PHONY: sync test test-backend test-frontend lint lint-backend lint-frontend build build-frontend compose-config test-e2e smoke acceptance
+
+sync:
+	$(UV) sync --locked --project backend
 
 test: test-backend test-frontend
 
