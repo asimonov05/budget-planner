@@ -4,25 +4,21 @@ import csv
 import hashlib
 import io
 import json
-import os
 import re
-import sqlite3
-import tempfile
 import zipfile
-from contextlib import closing
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from .. import __version__
-from ..config import config
 from ..core.ru_payroll import SalaryRule as PayrollRule, salary_payouts
-from ..db import get_db
+from ..core.tenant import budget_month_for_user, tenant_id
+from ..db import reserve_write_slot
 from ..models import (
     Account,
     AppSettings,
@@ -45,9 +41,10 @@ from ..models import (
     Transaction,
     TransactionTag,
     Transfer,
+    SessionToken,
 )
 from ..schemas import MAX_SAFE_INTEGER
-from ..security import require_csrf, require_csrf_unlocked, require_user
+from ..security import current_session, get_db, require_csrf, require_csrf_unlocked, require_user
 
 
 router = APIRouter(tags=["data"])
@@ -56,6 +53,7 @@ MAX_ROWS = 100_000
 MAX_FIELD = 16_384
 IMPORT_TYPES = {"transactions", "loan_schedule", "plan_items"}
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
 
 
 def decode_csv(data: bytes, encoding: str | None) -> tuple[str, str]:
@@ -121,7 +119,7 @@ def safe_excel(value: object) -> str:
 
 
 def ensure_import_month_open(db: Session, value: date) -> None:
-    month = db.get(BudgetMonth, value.strftime("%Y-%m"))
+    month = budget_month_for_user(db, value.strftime("%Y-%m"))
     if month and month.status == "closed":
         raise HTTPException(
             status_code=409,
@@ -382,7 +380,7 @@ def confirm_import(
         raise HTTPException(status_code=409, detail="Invalid batch cannot be confirmed")
     claimed = db.execute(
         update(ImportBatch)
-        .where(ImportBatch.id == batch_id, ImportBatch.status == "previewed")
+        .where(ImportBatch.id == batch_id, ImportBatch.user_id == tenant_id(db), ImportBatch.status == "previewed")
         .values(status="confirming")
         .execution_options(synchronize_session=False)
     )
@@ -656,6 +654,8 @@ def model_rows(db: Session, model) -> list[dict]:
             value = getattr(item, column.name)
             if model is Transaction and column.name == "import_batch_id":
                 value = None  # import provenance is installation-local, not a portable FK
+            if column.name == "user_id":
+                continue  # archive ownership is assigned by the importing session
             row[column.name] = value.isoformat() if isinstance(value, (date, datetime)) else value
         rows.append(row)
     return rows
@@ -956,21 +956,9 @@ def validate_canonical_relationships(db: Session) -> None:
                     or transaction.date != movement.date
                 ):
                     raise ValueError("goal movement is not paired with its transaction")
-    settings = db.get(AppSettings, 1)
-    if settings:
-        opening_cash = sum(
-            account.initial_balance_minor
-            for account in db.scalars(
-                select(Account).where(
-                    Account.initial_balance_date <= settings.accounting_start_date
-                )
-            ).all()
-        )
-        opening_reserved = sum(
-            goal.initial_reserved_minor for goal in db.scalars(select(Goal)).all()
-        )
-        if opening_reserved > opening_cash:
-            raise ValueError("initial goal reserves exceed opening cash")
+    # A canonical archive must preserve an existing installation even if its
+    # historical opening free balance is negative. Forecasts report that
+    # deficit; rejecting the archive here would make export non-restorable.
 
 
 @router.get("/exports/project")
@@ -983,13 +971,13 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             files.append(name)
             rows = model_rows(db, model)
             output = io.StringIO(newline="")
-            fields = [x.name for x in model.__table__.columns]
+            fields = [x.name for x in model.__table__.columns if x.name != "user_id"]
             writer = csv.DictWriter(output, fieldnames=fields)
             writer.writeheader()
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 4,
+            "schema_version": 5,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -1005,7 +993,8 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
 
 @router.post("/imports/project")
 def import_project(
-    file: UploadFile = File(...), _=Depends(require_csrf_unlocked), db: Session = Depends(get_db)
+    file: UploadFile = File(...), _=Depends(require_csrf_unlocked),
+    auth=Depends(current_session), db: Session = Depends(get_db)
 ) -> dict:
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
@@ -1022,9 +1011,9 @@ def import_project(
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
             schema_version = manifest.get("schema_version")
-            if schema_version not in (1, 2, 3, 4):
+            if schema_version not in (1, 2, 3, 4, 5):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
-            models = EXPORT_MODELS if schema_version == 4 else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
+            models = EXPORT_MODELS if schema_version in (4, 5) else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
             expected = {f"{model.__tablename__}.csv" for model in models} | {"manifest.json"}
             if names != expected:
                 raise HTTPException(status_code=422, detail="Archive file list does not match schema")
@@ -1032,9 +1021,12 @@ def import_project(
                 raise HTTPException(
                     status_code=422, detail="Manifest file list does not match archive"
                 )
-            db.execute(text("BEGIN IMMEDIATE"))
+            reserve_write_slot(db)
+            current = db.get(SessionToken, auth[1].id)
+            if not current or current.revoked:
+                raise HTTPException(status_code=401, detail="Session expired")
             if any(
-                (db.scalar(select(func.count()).select_from(model)) or 0)
+                (db.scalar(select(func.count()).select_from(model).where(model.user_id == tenant_id(db))) or 0)
                 for model in EXPORT_MODELS
                 if model is not AppSettings
             ):
@@ -1045,7 +1037,7 @@ def import_project(
             # GET /settings creates a harmless singleton on a new installation.
             # It must not make a canonical restore impossible; the imported row
             # replaces it within the same all-or-nothing transaction.
-            db.execute(delete(AppSettings))
+            db.execute(delete(AppSettings).where(AppSettings.user_id == tenant_id(db)))
             legacy_columns = (
                 LEGACY_V1_COLUMNS
                 if schema_version == 1
@@ -1055,12 +1047,12 @@ def import_project(
                 if schema_version == 3
                 else {}
             )
-            created = {}
+            parsed: dict[type, list[dict]] = {}
             for model in EXPORT_MODELS:
                 name = f"{model.__tablename__}.csv"
                 if name not in names:
                     continue
-                count = 0
+                rows = []
                 reader = csv.DictReader(io.StringIO(archive.read(name).decode("utf-8")))
                 for row_number, raw in enumerate(reader, start=2):
                     if row_number > MAX_ROWS + 1:
@@ -1069,15 +1061,70 @@ def import_project(
                         raise ValueError(f"{name} contains an oversized field")
                     values = {}
                     for column in model.__table__.columns:
-                        if column.name not in raw and column.name in legacy_columns.get(model, {}):
+                        if column.name == "user_id":
+                            values[column.name] = tenant_id(db)
+                        elif column.name not in raw and column.name in legacy_columns.get(model, {}):
                             values[column.name] = legacy_columns[model][column.name]
                         else:
                             values[column.name] = canonical_value(column, raw.get(column.name))
                     validate_canonical_row(model, values)
+                    rows.append(values)
+                parsed[model] = rows
+
+            # Archive IDs are local to the source installation. Allocate fresh
+            # PostgreSQL sequence IDs before resolving any cross-table links.
+            id_maps: dict[str, dict[int, int]] = {}
+            for model, rows in parsed.items():
+                if "id" not in model.__table__.c or not rows:
+                    continue
+                previous = [row["id"] for row in rows]
+                if len(previous) != len(set(previous)):
+                    raise ValueError(f"{model.__tablename__} contains duplicate IDs")
+                if db.bind.dialect.name == "sqlite":  # TD-003 legacy test fixture
+                    highest = db.connection().execute(
+                        select(func.max(model.__table__.c.id))
+                    ).scalar_one() or 0
+                    allocated = list(range(highest + 1, highest + 1 + len(rows)))
+                else:
+                    sequence = db.scalar(
+                        text("SELECT pg_get_serial_sequence(:table, 'id')"),
+                        {"table": model.__tablename__},
+                    )
+                    if not sequence:
+                        raise ValueError(f"{model.__tablename__} has no ID sequence")
+                    allocated = db.execute(
+                        text("SELECT nextval(CAST(:sequence AS regclass)) FROM generate_series(1, :count)"),
+                        {"sequence": sequence, "count": len(rows)},
+                    ).scalars().all()
+                id_maps[model.__tablename__] = dict(zip(previous, allocated, strict=True))
+
+            created = {}
+            for model, rows in parsed.items():
+                for values in rows:
+                    for column in model.__table__.columns:
+                        value = values[column.name]
+                        if value is None or column.name == "user_id":
+                            continue
+                        if column.name == "id":
+                            values["id"] = id_maps[model.__tablename__][value]
+                            continue
+                        for foreign_key in column.foreign_keys:
+                            target = foreign_key.column.table.name
+                            if target in id_maps:
+                                try:
+                                    values[column.name] = id_maps[target][value]
+                                except KeyError as exc:
+                                    raise ValueError(
+                                        f"{model.__tablename__}.{column.name} references missing {target} row"
+                                    ) from exc
+                    if model is Transaction and (values.get("external_source") or "").startswith("loan_schedule:"):
+                        old_item_id = int(values["external_source"].split(":", 1)[1])
+                        values["external_source"] = (
+                            f"loan_schedule:{id_maps['loan_schedule_items'][old_item_id]}"
+                        )
                     db.add(model(**values))
-                    count += 1
                 db.flush()
-                created[model.__tablename__] = count
+                created[model.__tablename__] = len(rows)
             if schema_version == 1:
                 for item in db.scalars(select(LoanScheduleItem)).all():
                     for payment in db.scalars(
@@ -1088,78 +1135,8 @@ def import_project(
                         payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 4, "created": created}
+            return {"schema_version": 5, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
     except (UnicodeError, ValueError, csv.Error, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail=f"Invalid canonical archive: {exc}") from exc
-
-
-def create_backup() -> Path:
-    config.backup_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    target = config.backup_dir / f"budget-{timestamp}-v{__version__}.sqlite3"
-    suffix = 1
-    while target.exists():
-        target = config.backup_dir / f"budget-{timestamp}-v{__version__}-{suffix}.sqlite3"
-        suffix += 1
-    fd, temporary = tempfile.mkstemp(prefix=".backup-", suffix=".sqlite3", dir=config.backup_dir)
-    os.close(fd)
-    try:
-        with (
-            closing(sqlite3.connect(config.database_path)) as source,
-            closing(sqlite3.connect(temporary)) as destination,
-        ):
-            source.backup(destination)
-            if destination.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise RuntimeError("Backup integrity check failed")
-            if destination.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                raise RuntimeError("Backup foreign key check failed")
-        with open(temporary, "rb") as backup_file:
-            os.fsync(backup_file.fileno())
-        os.replace(temporary, target)
-        directory_fd = os.open(config.backup_dir, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-    return target
-
-
-@router.get("/backups")
-def list_backups(_=Depends(require_user)) -> dict:
-    config.backup_dir.mkdir(parents=True, exist_ok=True)
-    items = [
-        {
-            "name": x.name,
-            "size": x.stat().st_size,
-            "created_at": datetime.fromtimestamp(x.stat().st_mtime, timezone.utc).isoformat(),
-        }
-        for x in sorted(config.backup_dir.glob("budget-*.sqlite3"), reverse=True)
-        if x.is_file() and not x.is_symlink()
-    ]
-    return {"items": items, "total": len(items)}
-
-
-@router.post("/backups", status_code=201)
-def backup(_=Depends(require_csrf_unlocked)) -> dict:
-    target = create_backup()
-    return {"name": target.name, "size": target.stat().st_size}
-
-
-@router.get("/backups/{name}")
-def download_backup(name: str, _=Depends(require_user)) -> FileResponse:
-    if Path(name).name != name:
-        raise HTTPException(status_code=422, detail="Invalid backup name")
-    target = config.backup_dir / name
-    if (
-        not target.is_file()
-        or target.is_symlink()
-        or not target.name.startswith("budget-")
-        or target.resolve().parent != config.backup_dir.resolve()
-    ):
-        raise HTTPException(status_code=404, detail="Backup not found")
-    return FileResponse(target, filename=target.name, media_type="application/vnd.sqlite3")

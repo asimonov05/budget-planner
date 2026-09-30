@@ -8,17 +8,17 @@ from sqlalchemy.orm import Session
 
 from ..core.salary_projection import projected_salary_payments
 from ..core.ru_payroll import add_months
-from ..db import get_db
-from ..models import Account, AppSettings, BudgetMonth, Category, PlanMatch, SalaryMatch, SalaryRule, Transaction
+from ..core.tenant import budget_month_for_user, settings_for_user
+from ..models import Account, BudgetMonth, Category, PlanMatch, SalaryMatch, SalaryRule, Transaction
 from ..schemas import SalaryMatchCreate, SalaryRuleCreate, SalaryRuleOut, SalaryRuleUpdate
-from ..security import require_csrf, require_user
+from ..security import get_db, require_csrf, require_user
 
 
 router = APIRouter(tags=["salary"])
 
 
 def validate_references(db: Session, body: SalaryRuleCreate, *, allow_archived: bool = False) -> None:
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     if not settings or settings.currency != "RUB":
         raise HTTPException(status_code=422, detail="Russian salary calculation requires RUB currency")
     account = db.get(Account, body.account_id) if body.account_id else None
@@ -95,14 +95,14 @@ def list_salary_payments(
 ) -> dict:
     if not 2025 <= int(month[:4]) <= 2100:
         raise HTTPException(status_code=422, detail="Salary month must be between 2025 and 2100")
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     items = [item for item in projected_salary_payments(db, month) if item["date"].strftime("%Y-%m") == month] if settings and settings.salary_enabled else []
     return {"items": items, "total": len(items)}
 
 
 @router.post("/salary-rules/{entity_id}/matches", status_code=201)
 def match_salary(entity_id: int, body: SalaryMatchCreate, _=Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     if not settings or not settings.salary_enabled:
         raise HTTPException(status_code=409, detail="Enable gross salary planning first")
     rule = db.get(SalaryRule, entity_id)
@@ -122,7 +122,7 @@ def match_salary(entity_id: int, body: SalaryMatchCreate, _=Depends(require_csrf
     if abs((transaction.date - payment["date"]).days) > 31:
         raise HTTPException(status_code=422, detail="Receipt date is too far from salary payment")
     for month in {transaction.date.strftime("%Y-%m"), payment["date"].strftime("%Y-%m")}:
-        budget_month = db.get(BudgetMonth, month)
+        budget_month = budget_month_for_user(db, month)
         if budget_month and budget_month.status == "closed":
             raise HTTPException(status_code=409, detail="Reopen month before matching salary")
     value = SalaryMatch(salary_rule_id=entity_id, **body.model_dump())
@@ -144,7 +144,7 @@ def unmatch_salary(entity_id: int, _=Depends(require_csrf), db: Session = Depend
             if payment["salary_rule_id"] == value.salary_rule_id and payment["earning_month"] == value.earning_month and payment["component"] == value.component:
                 months.add(payment["date"].strftime("%Y-%m"))
                 break
-        if any((record := db.get(BudgetMonth, month)) and record.status == "closed" for month in months):
+        if any((record := budget_month_for_user(db, month)) and record.status == "closed" for month in months):
             raise HTTPException(status_code=409, detail="Reopen month before removing salary match")
     db.delete(value)
     db.commit()

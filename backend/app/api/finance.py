@@ -20,11 +20,9 @@ from ..core.calculations import (
     projected_plan_occurrences,
     split_evenly,
 )
-from ..db import get_db
 from ..core.loans import annuity_payment, interest_for_period, monthly_dates, project_loan
 from ..models import (
     Account,
-    AppSettings,
     AuditLog,
     BudgetLimit,
     BudgetLimitOverride,
@@ -71,7 +69,8 @@ from ..schemas import (
     TransferOut,
     TransferUpdate,
 )
-from ..security import require_csrf, require_user
+from ..security import get_db, require_csrf, require_user
+from ..core.tenant import budget_month_for_user, settings_for_user
 
 
 router = APIRouter(tags=["finance"])
@@ -100,7 +99,7 @@ def audit_delete(db: Session, entity_type: str, value) -> None:
 
 
 def ensure_open(db: Session, value: date) -> None:
-    month = db.get(BudgetMonth, value.strftime("%Y-%m"))
+    month = budget_month_for_user(db, value.strftime("%Y-%m"))
     if month and month.status == "closed":
         raise HTTPException(
             status_code=409, detail="Month is closed; reopen it before changing financial data"
@@ -981,7 +980,7 @@ def goal_output(db: Session, goal: Goal) -> dict:
     value["reserved_minor"] = goal_reserved(db, goal)
     remaining = goal_remaining_need(db, goal)
     value["remaining_need_minor"] = remaining
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     try:
         user_timezone = ZoneInfo(settings.timezone if settings else "UTC")
     except (ZoneInfoNotFoundError, ValueError):
@@ -1013,7 +1012,7 @@ def list_goals(
 
 @router.post("/goals", status_code=201)
 def create_goal(body: GoalCreate, _=Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     accounting_start = settings.accounting_start_date if settings else date.today()
     opening_cash = sum(
         account.initial_balance_minor
@@ -1842,7 +1841,7 @@ def unlink_historical_loan_transaction(
 @router.post("/months/{month}/close")
 def close_month(month: str, _=Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     month_date(month)
-    value = db.get(BudgetMonth, month)
+    value = budget_month_for_user(db, month)
     if value and value.status == "closed":
         return {"month": month, "status": "closed", "version": value.version}
     if value is None:
@@ -1868,7 +1867,7 @@ def close_month(month: str, _=Depends(require_csrf), db: Session = Depends(get_d
 @router.post("/months/{month}/reopen")
 def reopen_month(month: str, _=Depends(require_csrf), db: Session = Depends(get_db)) -> dict:
     month_date(month)
-    value = db.get(BudgetMonth, month)
+    value = budget_month_for_user(db, month)
     if not value:
         missing("Budget month")
     if value.status == "open":

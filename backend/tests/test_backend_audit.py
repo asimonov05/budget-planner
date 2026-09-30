@@ -2,18 +2,15 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+from datetime import date
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm.exc import StaleDataError
 
-from app.api.io import EXPORT_MODELS, create_backup
-from app.cli import restore
-from app.config import config
+from app.api.io import EXPORT_MODELS
 from app.core.calculations import calculate_forecast
-from app.db import SessionLocal, engine
+from app.db import SessionLocal
 from app.models import (
     Account,
     AppSettings,
@@ -21,10 +18,8 @@ from app.models import (
     Goal,
     PlanItem,
     PlanOverride,
-    SessionToken,
     Transaction,
 )
-from app.security import hash_token
 
 
 def test_origin_cannot_be_whitelisted_by_spoofed_forwarded_host(client, auth):
@@ -383,44 +378,3 @@ def test_sqlalchemy_version_guard_rejects_actual_concurrent_update(db):
         second_value.name = "Старое имя"
         with SessionLocal() as stale_writer, pytest.raises(StaleDataError):
             stale_writer.merge(second_value)
-
-
-def test_restore_publishes_checked_database_without_old_sessions_or_sidecars(monkeypatch):
-    with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE IF NOT EXISTS alembic_version (version_num TEXT)"))
-        connection.execute(text("DELETE FROM alembic_version"))
-        connection.execute(text("INSERT INTO alembic_version(version_num) VALUES ('0001')"))
-    with SessionLocal() as db:
-        account = Account(
-            name="Восстановленный",
-            type="bank",
-            initial_balance_minor=12345,
-            initial_balance_date=date(2026, 1, 1),
-        )
-        db.add(account)
-        db.add(
-            SessionToken(
-                user_id=1,
-                token_hash=hash_token("old-session"),
-                csrf_hash=hash_token("old-csrf"),
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-            )
-        )
-        db.commit()
-    backup_path = create_backup()
-
-    with SessionLocal() as db:
-        db.query(Account).delete()
-        db.commit()
-    engine.dispose()
-    sidecars = [Path(f"{config.database_path}{suffix}") for suffix in ("-wal", "-shm")]
-    for sidecar in sidecars:
-        sidecar.write_bytes(b"belongs to the previous database")
-    monkeypatch.setattr("app.cli.create_backup", lambda: Path("preserved-before-restore.sqlite3"))
-
-    restore(backup_path)
-    assert all(not sidecar.exists() for sidecar in sidecars)
-    with SessionLocal() as db:
-        restored = db.scalar(select(Account).where(Account.name == "Восстановленный"))
-        assert restored is not None and restored.initial_balance_minor == 12345
-        assert db.scalar(select(func.count()).select_from(SessionToken)) == 0

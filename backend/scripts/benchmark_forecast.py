@@ -12,7 +12,6 @@ from pathlib import Path
 
 benchmark_dir = Path(tempfile.mkdtemp(prefix="budget-forecast-benchmark-"))
 os.environ["DATABASE_PATH"] = str(benchmark_dir / "benchmark.sqlite3")
-os.environ["BACKUP_DIR"] = str(benchmark_dir / "backups")
 os.environ["REQUIRE_SAFE_SQLITE"] = "0"
 
 from app.core.calculations import calculate_forecast  # noqa: E402

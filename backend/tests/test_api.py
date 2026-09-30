@@ -3,14 +3,12 @@ from __future__ import annotations
 import csv
 import io
 import json
-import sqlite3
 import zipfile
 from datetime import date
 
 from sqlalchemy import delete, func, select
 
 from app.api.io import EXPORT_MODELS
-from app.config import config
 from app.models import (
     Account,
     AuditLog,
@@ -32,7 +30,7 @@ from app.models import (
 def test_auth_and_csrf(client):
     assert client.get("/api/v1/accounts").status_code == 401
     assert client.get("/api/v1/exports/project").status_code == 401
-    assert client.get("/api/v1/backups").status_code == 401
+    assert client.get("/api/v1/backups").status_code == 404
     login = client.post(
         "/api/v1/auth/login", json={"username": "owner", "password": "correct horse battery staple"}
     )
@@ -46,7 +44,7 @@ def test_auth_and_csrf(client):
         "initial_balance_date": "2026-01-01",
     }
     assert client.post("/api/v1/accounts", json=body).status_code == 403
-    assert client.post("/api/v1/backups").status_code == 403
+    assert client.post("/api/v1/backups").status_code == 404
     assert (
         client.post(
             "/api/v1/accounts", json=body, headers={"X-CSRF-Token": login.json()["csrf_token"]}
@@ -461,7 +459,7 @@ def test_formula_safe_csv_export(client, auth, account, db):
     assert "'=CMD()" in response.text
 
 
-def test_project_export_is_safe_zip_and_backup_valid(client, auth, account, db):
+def test_project_export_is_safe_zip(client, auth, account, db):
     category = Category(name="Еда", kind="expense")
     db.add(category)
     db.flush()
@@ -480,12 +478,6 @@ def test_project_export_is_safe_zip_and_backup_valid(client, auth, account, db):
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         assert "manifest.json" in archive.namelist()
         assert all(".." not in name for name in archive.namelist())
-    backup = client.post("/api/v1/backups", headers=auth)
-    assert backup.status_code == 201
-    path = config.backup_dir / backup.json()["name"]
-    connection = sqlite3.connect(path)
-    assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-    assert connection.execute("PRAGMA foreign_key_check").fetchone() is None
 
 
 def test_project_export_import_round_trip_preserves_links_and_totals(client, auth, account, db):
@@ -574,6 +566,27 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     assert after == before
 
 
+def test_project_import_preserves_historical_opening_deficit(client, auth, account, db):
+    db.add(Goal(
+        name="Исторический резерв",
+        target_amount_minor=account.initial_balance_minor + 100,
+        initial_reserved_minor=account.initial_balance_minor + 100,
+    ))
+    db.commit()
+    exported = client.get("/api/v1/exports/project")
+    assert exported.status_code == 200
+    for model in reversed(EXPORT_MODELS):
+        db.execute(delete(model))
+    db.commit()
+    imported = client.post(
+        "/api/v1/imports/project",
+        files={"file": ("historical.zip", exported.content, "application/zip")},
+        headers=auth,
+    )
+    assert imported.status_code == 200, imported.text
+    assert db.scalar(select(Goal).where(Goal.name == "Исторический резерв")) is not None
+
+
 def test_legacy_project_archive_restores_loan_payment_links(client, auth, account, db):
     loan = Loan(name="Старый кредит", principal_minor=100_000, principal_as_of=date(2026, 1, 1))
     db.add(loan)
@@ -654,7 +667,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 4
+    assert imported.json()["schema_version"] == 5
     db.expire_all()
     restored_loan = db.scalar(select(Loan))
     restored_payment = db.scalar(
@@ -704,7 +717,7 @@ def test_version_2_project_archive_defaults_monthly_category_estimate(client, au
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 4
+    assert imported.json()["schema_version"] == 5
     db.expire_all()
     assert db.scalar(select(Category).where(Category.name == "Продукты")).monthly_estimate is False
 

@@ -5,6 +5,7 @@ import type { User } from './lib/types'
 import { Layout } from './components/Layout'
 import { State } from './components/ui'
 import { Login } from './pages/Login'
+import { Register } from './pages/Register'
 import { DashboardPage } from './pages/Dashboard'
 import { PlanPage } from './pages/Plan'
 import { ResourcePage } from './pages/Resources'
@@ -37,6 +38,7 @@ export function App() {
   const me = useQuery<User | null>({ queryKey: ['me'], queryFn: loadCurrentUser, retry: false })
   return <Routes>
     <Route path="/login" element={<Login currentUser={me.data} />} />
+    <Route path="/register" element={<Register currentUser={me.data} />} />
     <Route element={<Protected />}>
       <Route index element={<DashboardPage />} />
       <Route path="accounts" element={<AccountsPage />} />

@@ -1,6 +1,53 @@
 name: budget-planner
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_DB: budget
+      POSTGRES_USER: budget
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budget -d budget"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    image: "budget-planner:${APP_IMAGE_TAG:-local}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.migrate_job"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://budget@postgres:5432/budget
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
+      RUNTIME_PASSWORD_FILE: /run/secrets/postgres_runtime_password
+      DEBUG_DATABASE_PASSWORD_FILE: /run/secrets/postgres_debug_admin_password
+      PYTHONDONTWRITEBYTECODE: "1"
+    secrets:
+      - postgres_password
+      - postgres_runtime_password
+      - postgres_debug_admin_password
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
   app:
     image: "budget-planner:${APP_IMAGE_TAG:-local}"
     build:
@@ -8,21 +55,27 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "${BIND_HOST:-127.0.0.1}:${APP_PORT:-8082}:8000"
     environment:
-      DATABASE_PATH: /data/budget.sqlite3
-      BACKUP_DIR: /backups
+      DATABASE_URL: postgresql+psycopg://budget_runtime@postgres:5432/budget
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_runtime_password
+      DEBUG_DATABASE_URL: postgresql+psycopg://debug_admin@postgres:5432/budget
+      DEBUG_DATABASE_PASSWORD_FILE: /run/secrets/postgres_debug_admin_password
       STATIC_DIR: /app/static
-      REQUIRE_SAFE_SQLITE: "1"
       DEBUG_ADMIN_ENABLED: "${DEBUG_ADMIN_ENABLED:-0}"
       PYTHONDONTWRITEBYTECODE: "1"
       TRUSTED_HOSTS: "${TRUSTED_HOSTS:-127.0.0.1,localhost}"
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-0}"
       FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
-    volumes:
-      - budget_data:/data
-      - budget_backups:/backups
+    secrets:
+      - postgres_runtime_password
+      - postgres_debug_admin_password
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -48,5 +101,12 @@ services:
         max-file: "3"
 
 volumes:
-  budget_data:
-  budget_backups:
+  postgres_data:
+
+secrets:
+  postgres_password:
+    file: .secrets/postgres-password
+  postgres_runtime_password:
+    file: .secrets/postgres-runtime-password
+  postgres_debug_admin_password:
+    file: .secrets/postgres-debug-admin-password

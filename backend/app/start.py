@@ -4,11 +4,11 @@ import os
 import uvicorn
 
 from .db import verify_database
-from .migrations import migrate
+from .migrations import verify_schema_current
 
 
 def main() -> None:
-    migrate(backup_before_upgrade=True)
+    verify_schema_current()
     verify_database()
     uvicorn.run(
         "app.main:app",

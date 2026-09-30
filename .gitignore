@@ -150,6 +150,8 @@ activemq-data/
 
 # Environments
 .env
+.postgres-password
+.secrets/
 .envrc
 .venv
 env/
@@ -228,6 +230,7 @@ test-results/
 .env
 data/
 backups/
+.codegraph/
 *.sqlite3
 *.sqlite3-journal
 *.sqlite3-wal

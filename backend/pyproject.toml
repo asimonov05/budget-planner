@@ -13,6 +13,7 @@ dependencies = [
     "python-multipart==0.0.20",
     "argon2-cffi==25.1.0",
     "sqladmin[full]==0.32.0",
+    "psycopg[binary]>=3.2,<4",
 ]
 
 [dependency-groups]

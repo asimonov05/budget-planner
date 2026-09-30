@@ -1,0 +1,3688 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {
+      "id": "rel-transfers-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transfers",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130023,
+      "seed": 130023,
+      "opacity": 80,
+      "x": 736,
+      "y": -596,
+      "width": 644,
+      "height": 1942,
+      "points": [
+        [
+          644,
+          1942
+        ],
+        [
+          644,
+          1922
+        ],
+        [
+          644,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          796
+        ]
+      ]
+    },
+    {
+      "id": "rel-transactions-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130022,
+      "seed": 130022,
+      "opacity": 80,
+      "x": 710,
+      "y": -574,
+      "width": 1210,
+      "height": 1224,
+      "points": [
+        [
+          1210,
+          1224
+        ],
+        [
+          1210,
+          1204
+        ],
+        [
+          1210,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          774
+        ]
+      ]
+    },
+    {
+      "id": "rel-transaction-tags-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transaction-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130021,
+      "seed": 130021,
+      "opacity": 80,
+      "x": 685,
+      "y": -552,
+      "width": 1095,
+      "height": 1772,
+      "points": [
+        [
+          1095,
+          1772
+        ],
+        [
+          1095,
+          1752
+        ],
+        [
+          895,
+          1752
+        ],
+        [
+          895,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          752
+        ]
+      ]
+    },
+    {
+      "id": "rel-tags-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130020,
+      "seed": 130020,
+      "opacity": 80,
+      "x": 659,
+      "y": -530,
+      "width": 621,
+      "height": 1580,
+      "points": [
+        [
+          621,
+          1580
+        ],
+        [
+          621,
+          1560
+        ],
+        [
+          621,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          730
+        ]
+      ]
+    },
+    {
+      "id": "rel-salary-rules-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-rules",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130019,
+      "seed": 130019,
+      "opacity": 80,
+      "x": 633,
+      "y": -508,
+      "width": 3687,
+      "height": 758,
+      "points": [
+        [
+          3687,
+          758
+        ],
+        [
+          3687,
+          738
+        ],
+        [
+          3687,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          708
+        ]
+      ]
+    },
+    {
+      "id": "rel-salary-matches-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130018,
+      "seed": 130018,
+      "opacity": 80,
+      "x": 607,
+      "y": -486,
+      "width": 4213,
+      "height": 1186,
+      "points": [
+        [
+          4213,
+          1186
+        ],
+        [
+          4213,
+          1166
+        ],
+        [
+          4213,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          686
+        ]
+      ]
+    },
+    {
+      "id": "rel-plan-overrides-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-overrides",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130017,
+      "seed": 130017,
+      "opacity": 80,
+      "x": 582,
+      "y": -464,
+      "width": 2668,
+      "height": 1884,
+      "points": [
+        [
+          2158,
+          1884
+        ],
+        [
+          2158,
+          1864
+        ],
+        [
+          2668,
+          1864
+        ],
+        [
+          2668,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          664
+        ]
+      ]
+    },
+    {
+      "id": "rel-plan-matches-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130016,
+      "seed": 130016,
+      "opacity": 80,
+      "x": 556,
+      "y": -442,
+      "width": 2504,
+      "height": 1862,
+      "points": [
+        [
+          2504,
+          1862
+        ],
+        [
+          2504,
+          1842
+        ],
+        [
+          2504,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          642
+        ]
+      ]
+    },
+    {
+      "id": "rel-plan-items-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130015,
+      "seed": 130015,
+      "opacity": 80,
+      "x": 530,
+      "y": -420,
+      "width": 1890,
+      "height": 1070,
+      "points": [
+        [
+          1890,
+          1070
+        ],
+        [
+          1890,
+          1050
+        ],
+        [
+          1890,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          620
+        ]
+      ]
+    },
+    {
+      "id": "rel-plan-item-tags-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-item-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130014,
+      "seed": 130014,
+      "opacity": 80,
+      "x": 504,
+      "y": -398,
+      "width": 2746,
+      "height": 1618,
+      "points": [
+        [
+          2236,
+          1618
+        ],
+        [
+          2236,
+          1598
+        ],
+        [
+          2746,
+          1598
+        ],
+        [
+          2746,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          598
+        ]
+      ]
+    },
+    {
+      "id": "rel-loans-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-loans",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130013,
+      "seed": 130013,
+      "opacity": 80,
+      "x": 479,
+      "y": -376,
+      "width": 2841,
+      "height": 876,
+      "points": [
+        [
+          2841,
+          876
+        ],
+        [
+          2841,
+          856
+        ],
+        [
+          2841,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          576
+        ]
+      ]
+    },
+    {
+      "id": "rel-loan-schedule-items-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-loan-schedule-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130012,
+      "seed": 130012,
+      "opacity": 80,
+      "x": 453,
+      "y": -354,
+      "width": 3407,
+      "height": 1254,
+      "points": [
+        [
+          3407,
+          1254
+        ],
+        [
+          3407,
+          1234
+        ],
+        [
+          3407,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          554
+        ]
+      ]
+    },
+    {
+      "id": "rel-import-batches-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-import-batches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130011,
+      "seed": 130011,
+      "opacity": 80,
+      "x": 427,
+      "y": -332,
+      "width": 13,
+      "height": 1152,
+      "points": [
+        [
+          13,
+          1152
+        ],
+        [
+          13,
+          1132
+        ],
+        [
+          13,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          532
+        ]
+      ]
+    },
+    {
+      "id": "rel-idempotency-records-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-idempotency-records",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130010,
+      "seed": 130010,
+      "opacity": 80,
+      "x": 401,
+      "y": -310,
+      "width": 79,
+      "height": 1444,
+      "points": [
+        [
+          79,
+          1444
+        ],
+        [
+          79,
+          1424
+        ],
+        [
+          79,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          510
+        ]
+      ]
+    },
+    {
+      "id": "rel-goals-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-goals",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130009,
+      "seed": 130009,
+      "opacity": 80,
+      "x": 376,
+      "y": -288,
+      "width": 2344,
+      "height": 488,
+      "points": [
+        [
+          2344,
+          388
+        ],
+        [
+          2344,
+          368
+        ],
+        [
+          2344,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          488
+        ]
+      ]
+    },
+    {
+      "id": "rel-goal-reserve-movements-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-goal-reserve-movements",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130008,
+      "seed": 130008,
+      "opacity": 80,
+      "x": 350,
+      "y": -266,
+      "width": 2970,
+      "height": 1666,
+      "points": [
+        [
+          2970,
+          1666
+        ],
+        [
+          2970,
+          1646
+        ],
+        [
+          2900,
+          1646
+        ],
+        [
+          2900,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          466
+        ]
+      ]
+    },
+    {
+      "id": "rel-categories-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-categories",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130007,
+      "seed": 130007,
+      "opacity": 80,
+      "x": 324,
+      "y": -244,
+      "width": 1796,
+      "height": 444,
+      "points": [
+        [
+          1796,
+          444
+        ],
+        [
+          1796,
+          424
+        ],
+        [
+          1796,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          444
+        ]
+      ]
+    },
+    {
+      "id": "rel-budget-months-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-budget-months",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130006,
+      "seed": 130006,
+      "opacity": 80,
+      "x": 298,
+      "y": -222,
+      "width": 1282,
+      "height": 1972,
+      "points": [
+        [
+          1062,
+          1972
+        ],
+        [
+          1062,
+          1952
+        ],
+        [
+          1282,
+          1952
+        ],
+        [
+          1282,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          422
+        ]
+      ]
+    },
+    {
+      "id": "rel-budget-limits-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-budget-limits",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130005,
+      "seed": 130005,
+      "opacity": 80,
+      "x": 70,
+      "y": -200,
+      "width": 610,
+      "height": 1750,
+      "points": [
+        [
+          610,
+          1750
+        ],
+        [
+          610,
+          1730
+        ],
+        [
+          0,
+          1730
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          203,
+          0
+        ],
+        [
+          203,
+          400
+        ]
+      ]
+    },
+    {
+      "id": "rel-budget-limit-overrides-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-budget-limit-overrides",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130004,
+      "seed": 130004,
+      "opacity": 80,
+      "x": 70,
+      "y": -178,
+      "width": 610,
+      "height": 2024,
+      "points": [
+        [
+          610,
+          2024
+        ],
+        [
+          610,
+          2004
+        ],
+        [
+          0,
+          2004
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          177,
+          0
+        ],
+        [
+          177,
+          378
+        ]
+      ]
+    },
+    {
+      "id": "rel-audit-logs-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-audit-logs",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130003,
+      "seed": 130003,
+      "opacity": 80,
+      "x": 221,
+      "y": -156,
+      "width": 379,
+      "height": 1276,
+      "points": [
+        [
+          379,
+          1276
+        ],
+        [
+          379,
+          1256
+        ],
+        [
+          379,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          356
+        ]
+      ]
+    },
+    {
+      "id": "rel-app-settings-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-settings",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130002,
+      "seed": 130002,
+      "opacity": 80,
+      "x": 195,
+      "y": -134,
+      "width": 5,
+      "height": 634,
+      "points": [
+        [
+          5,
+          634
+        ],
+        [
+          5,
+          614
+        ],
+        [
+          5,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          334
+        ]
+      ]
+    },
+    {
+      "id": "rel-accounts-user",
+      "type": "arrow",
+      "strokeColor": "#495057",
+      "strokeWidth": 1.5,
+      "strokeStyle": "solid",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130001,
+      "seed": 130001,
+      "opacity": 80,
+      "x": 170,
+      "y": -112,
+      "width": 1450,
+      "height": 312,
+      "points": [
+        [
+          1450,
+          312
+        ],
+        [
+          1450,
+          292
+        ],
+        [
+          1450,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          312
+        ]
+      ]
+    },
+    {
+      "id": "rel-sessions-user",
+      "type": "arrow",
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-sessions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 130000,
+      "seed": 130000,
+      "opacity": 100,
+      "x": 780,
+      "y": 295,
+      "width": 60,
+      "height": 0,
+      "points": [
+        [
+          60,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "id": "rel-tx-account",
+      "type": "arrow",
+      "x": 1850,
+      "y": 479,
+      "width": 0,
+      "height": 171,
+      "points": [
+        [
+          0,
+          171
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-tx-category",
+      "type": "arrow",
+      "x": 2130,
+      "y": 517,
+      "width": 70,
+      "height": 133,
+      "points": [
+        [
+          0,
+          133
+        ],
+        [
+          70,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-categories",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-tx-goal",
+      "type": "arrow",
+      "x": 2150,
+      "y": 420,
+      "width": 650,
+      "height": 380,
+      "points": [
+        [
+          75,
+          380
+        ],
+        [
+          0,
+          380
+        ],
+        [
+          0,
+          130
+        ],
+        [
+          500,
+          130
+        ],
+        [
+          500,
+          0
+        ],
+        [
+          650,
+          16
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-goals",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-tx-loan",
+      "type": "arrow",
+      "x": 2150,
+      "y": 700,
+      "width": 1150,
+      "height": 500,
+      "points": [
+        [
+          75,
+          260
+        ],
+        [
+          0,
+          260
+        ],
+        [
+          0,
+          500
+        ],
+        [
+          1050,
+          500
+        ],
+        [
+          1050,
+          0
+        ],
+        [
+          1150,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-loans",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-tx-import",
+      "type": "arrow",
+      "x": 460,
+      "y": 930,
+      "width": 1240,
+      "height": 70,
+      "points": [
+        [
+          1240,
+          70
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-import-batches",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-txtag-tx",
+      "type": "arrow",
+      "x": 1850,
+      "y": 1154,
+      "width": 0,
+      "height": 66,
+      "points": [
+        [
+          0,
+          66
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transaction-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-txtag-tag",
+      "type": "arrow",
+      "x": 1360,
+      "y": 1160,
+      "width": 390,
+      "height": 110,
+      "points": [
+        [
+          390,
+          110
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transaction-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-transfer-from",
+      "type": "arrow",
+      "x": 1400,
+      "y": 350,
+      "width": 200,
+      "height": 996,
+      "points": [
+        [
+          0,
+          996
+        ],
+        [
+          0,
+          850
+        ],
+        [
+          100,
+          850
+        ],
+        [
+          100,
+          0
+        ],
+        [
+          200,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transfers",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-transfer-to",
+      "type": "arrow",
+      "x": 1520,
+      "y": 400,
+      "width": 80,
+      "height": 946,
+      "points": [
+        [
+          0,
+          946
+        ],
+        [
+          30,
+          930
+        ],
+        [
+          30,
+          0
+        ],
+        [
+          80,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-transfers",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-plan-goal",
+      "type": "arrow",
+      "x": 2700,
+      "y": 436,
+      "width": 100,
+      "height": 214,
+      "points": [
+        [
+          0,
+          214
+        ],
+        [
+          100,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-goals",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-plan-account",
+      "type": "arrow",
+      "x": 1910,
+      "y": 400,
+      "width": 490,
+      "height": 350,
+      "points": [
+        [
+          490,
+          350
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-plan-category",
+      "type": "arrow",
+      "x": 2300,
+      "y": 517,
+      "width": 100,
+      "height": 133,
+      "points": [
+        [
+          100,
+          133
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-categories",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-plan-loan",
+      "type": "arrow",
+      "x": 2820,
+      "y": 700,
+      "width": 480,
+      "height": 50,
+      "points": [
+        [
+          0,
+          50
+        ],
+        [
+          480,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-loans",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-pitag-plan",
+      "type": "arrow",
+      "x": 2600,
+      "y": 1154,
+      "width": 0,
+      "height": 66,
+      "points": [
+        [
+          0,
+          66
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-item-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-pitag-tag",
+      "type": "arrow",
+      "x": 1360,
+      "y": 1160,
+      "width": 1110,
+      "height": 110,
+      "points": [
+        [
+          1110,
+          110
+        ],
+        [
+          940,
+          110
+        ],
+        [
+          940,
+          20
+        ],
+        [
+          40,
+          20
+        ],
+        [
+          40,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-item-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-tags",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-override-plan",
+      "type": "arrow",
+      "x": 2300,
+      "y": 1154,
+      "width": 120,
+      "height": 266,
+      "points": [
+        [
+          100,
+          266
+        ],
+        [
+          0,
+          266
+        ],
+        [
+          0,
+          16
+        ],
+        [
+          120,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-overrides",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-planmatch-plan",
+      "type": "arrow",
+      "x": 2820,
+      "y": 1150,
+      "width": 30,
+      "height": 330,
+      "points": [
+        [
+          30,
+          330
+        ],
+        [
+          10,
+          330
+        ],
+        [
+          10,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-plan-items",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-planmatch-tx",
+      "type": "arrow",
+      "x": 2130,
+      "y": 1154,
+      "width": 870,
+      "height": 546,
+      "points": [
+        [
+          870,
+          508
+        ],
+        [
+          870,
+          546
+        ],
+        [
+          70,
+          546
+        ],
+        [
+          70,
+          46
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-plan-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-budget-category",
+      "type": "arrow",
+      "x": 540,
+      "y": 470,
+      "width": 1560,
+      "height": 1150,
+      "points": [
+        [
+          110,
+          1150
+        ],
+        [
+          0,
+          1150
+        ],
+        [
+          0,
+          30
+        ],
+        [
+          1560,
+          30
+        ],
+        [
+          1560,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-budget-limits",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-categories",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-budgetoverride-budget",
+      "type": "arrow",
+      "x": 820,
+      "y": 1811,
+      "width": 0,
+      "height": 35,
+      "points": [
+        [
+          0,
+          35
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-budget-limit-overrides",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-budget-limits",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-movement-goal",
+      "type": "arrow",
+      "x": 3050,
+      "y": 50,
+      "width": 750,
+      "height": 1350,
+      "points": [
+        [
+          400,
+          1350
+        ],
+        [
+          750,
+          1350
+        ],
+        [
+          750,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          250
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-goal-reserve-movements",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-goals",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-movement-tx",
+      "type": "arrow",
+      "x": 2130,
+      "y": 1154,
+      "width": 1320,
+      "height": 546,
+      "points": [
+        [
+          1320,
+          525
+        ],
+        [
+          1320,
+          546
+        ],
+        [
+          70,
+          546
+        ],
+        [
+          70,
+          46
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-goal-reserve-movements",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-loan-account",
+      "type": "arrow",
+      "x": 1910,
+      "y": 50,
+      "width": 1590,
+      "height": 450,
+      "points": [
+        [
+          1590,
+          450
+        ],
+        [
+          1590,
+          0
+        ],
+        [
+          90,
+          0
+        ],
+        [
+          90,
+          150
+        ],
+        [
+          0,
+          250
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-loans",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-schedule-loan",
+      "type": "arrow",
+      "x": 3500,
+      "y": 900,
+      "width": 500,
+      "height": 48,
+      "points": [
+        [
+          500,
+          0
+        ],
+        [
+          0,
+          48
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-loan-schedule-items",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-loans",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-salary-account",
+      "type": "arrow",
+      "x": 1910,
+      "y": 20,
+      "width": 2390,
+      "height": 400,
+      "points": [
+        [
+          2390,
+          400
+        ],
+        [
+          2290,
+          400
+        ],
+        [
+          2290,
+          0
+        ],
+        [
+          40,
+          0
+        ],
+        [
+          40,
+          180
+        ],
+        [
+          0,
+          230
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-rules",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-accounts",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-salary-category",
+      "type": "arrow",
+      "x": 2410,
+      "y": 80,
+      "width": 1890,
+      "height": 420,
+      "points": [
+        [
+          1890,
+          420
+        ],
+        [
+          1740,
+          420
+        ],
+        [
+          1740,
+          0
+        ],
+        [
+          40,
+          0
+        ],
+        [
+          40,
+          220
+        ],
+        [
+          0,
+          220
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-rules",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-categories",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "rel-salarymatch-rule",
+      "type": "arrow",
+      "x": 4710,
+      "y": 500,
+      "width": 90,
+      "height": 320,
+      "points": [
+        [
+          90,
+          320
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-salary-rules",
+        "focus": 0,
+        "gap": 0
+      }
+    },
+    {
+      "id": "rel-salarymatch-tx",
+      "type": "arrow",
+      "x": 2130,
+      "y": 942,
+      "width": 2870,
+      "height": 858,
+      "points": [
+        [
+          2870,
+          0
+        ],
+        [
+          2870,
+          858
+        ],
+        [
+          70,
+          858
+        ],
+        [
+          70,
+          258
+        ],
+        [
+          0,
+          212
+        ]
+      ],
+      "strokeColor": "#495057",
+      "strokeWidth": 2,
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-salary-matches",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-transactions",
+        "focus": 0,
+        "gap": 0
+      },
+      "strokeStyle": "solid"
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "x": 100,
+      "y": -760,
+      "text": "Budget Planner — схема базы данных",
+      "fontSize": 30,
+      "fontFamily": 1,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "Budget Planner — схема базы данных",
+      "autoResize": true,
+      "lineHeight": 1.25,
+      "width": 700,
+      "height": 40,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9100,
+      "version": 1,
+      "versionNonce": 9100,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "legend",
+      "type": "text",
+      "x": 100,
+      "y": -695,
+      "text": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS включена для финансовых таблиц и sessions; поиск сессии ограничен hash текущего токена.",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS включена для финансовых таблиц и sessions; поиск сессии ограничен hash текущего токена.",
+      "autoResize": true,
+      "lineHeight": 1.25,
+      "width": 1300,
+      "height": 67,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9101,
+      "version": 1,
+      "versionNonce": 9101,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-users",
+      "type": "rectangle",
+      "x": 100,
+      "y": 200,
+      "width": 680,
+      "height": 186,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-users",
+      "type": "text",
+      "x": 118,
+      "y": 217,
+      "text": "USERS\n─────────\nPK  id: integer\nUQ  username: varchar(80)\npassword_hash: varchar(512)\nis_admin: bool\nactive: bool\ncreated_at: datetime",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "USERS\n─────────\nPK  id: integer\nUQ  username: varchar(80)\npassword_hash: varchar(512)\nis_admin: bool\nactive: bool\ncreated_at: datetime",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 250,
+      "height": 152,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9102,
+      "version": 2,
+      "versionNonce": 9102,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-sessions",
+      "type": "rectangle",
+      "x": 840,
+      "y": 200,
+      "width": 400,
+      "height": 224,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-sessions",
+      "type": "text",
+      "x": 858,
+      "y": 217,
+      "text": "SESSIONS\n────────────\nPK  id: integer\nFK/IX  user_id: integer\nUQ/IX  token_hash: varchar(64)\ncsrf_hash: varchar(64)\nIX  expires_at: datetime\nrevoked: bool\ncreated_at: datetime\nRLS: owner / token hash / admin",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "SESSIONS\n────────────\nPK  id: integer\nFK/IX  user_id: integer\nUQ/IX  token_hash: varchar(64)\ncsrf_hash: varchar(64)\nIX  expires_at: datetime\nrevoked: bool\ncreated_at: datetime\nRLS: owner / token hash / admin",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 360,
+      "height": 190,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9103,
+      "version": 2,
+      "versionNonce": 9103,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-settings",
+      "type": "rectangle",
+      "x": 100,
+      "y": 500,
+      "width": 310,
+      "height": 261,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#e3fafc",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-settings",
+      "type": "text",
+      "x": 118,
+      "y": 517,
+      "text": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/UQ/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/UQ/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 250,
+      "height": 227,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9104,
+      "version": 2,
+      "versionNonce": 9104,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-import-batches",
+      "type": "rectangle",
+      "x": 100,
+      "y": 820,
+      "width": 360,
+      "height": 279,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-import-batches",
+      "type": "text",
+      "x": 118,
+      "y": 837,
+      "text": "IMPORT_BATCHES\n──────────────────\nPK  id: integer\nfingerprint: varchar(64)\nimport_type: varchar(40)\nsettings_json: text\nrows_json: text\nstatus: varchar(20)\ncreated_count: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, fingerprint)\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "IMPORT_BATCHES\n──────────────────\nPK  id: integer\nfingerprint: varchar(64)\nimport_type: varchar(40)\nsettings_json: text\nrows_json: text\nstatus: varchar(20)\ncreated_count: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, fingerprint)\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 222,
+      "height": 245,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9105,
+      "version": 2,
+      "versionNonce": 9105,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-idempotency-records",
+      "type": "rectangle",
+      "x": 100,
+      "y": 1134,
+      "width": 400,
+      "height": 242,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-idempotency-records",
+      "type": "text",
+      "x": 118,
+      "y": 1151,
+      "text": "IDEMPOTENCY_RECORDS\n────────────────────\nPK  id: integer\nkey: varchar(160)\nrequest_hash: varchar(64)\nresponse_json: text\nstatus_code: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, key)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "IDEMPOTENCY_RECORDS\n────────────────────\nPK  id: integer\nkey: varchar(160)\nrequest_hash: varchar(64)\nresponse_json: text\nstatus_code: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, key)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 231,
+      "height": 208,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9106,
+      "version": 2,
+      "versionNonce": 9106,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-audit-logs",
+      "type": "rectangle",
+      "x": 580,
+      "y": 1120,
+      "width": 400,
+      "height": 242,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-audit-logs",
+      "type": "text",
+      "x": 598,
+      "y": 1137,
+      "text": "AUDIT_LOGS\n──────────────\nPK  id: integer\nIX  entity_type: varchar(80)\nentity_id: varchar(80)\naction: varchar(40)\nbefore_json: text?\nafter_json: text?\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "AUDIT_LOGS\n──────────────\nPK  id: integer\nIX  entity_type: varchar(80)\nentity_id: varchar(80)\naction: varchar(40)\nbefore_json: text?\nafter_json: text?\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 259,
+      "height": 208,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9107,
+      "version": 2,
+      "versionNonce": 9107,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-accounts",
+      "type": "rectangle",
+      "x": 1600,
+      "y": 200,
+      "width": 310,
+      "height": 279,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#e3fafc",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-accounts",
+      "type": "text",
+      "x": 1618,
+      "y": 217,
+      "text": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 259,
+      "height": 245,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9108,
+      "version": 2,
+      "versionNonce": 9108,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-categories",
+      "type": "rectangle",
+      "x": 2100,
+      "y": 200,
+      "width": 310,
+      "height": 317,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#e3fafc",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-categories",
+      "type": "text",
+      "x": 2118,
+      "y": 217,
+      "text": "CATEGORIES\n──────────────\nPK  id: integer\nname: varchar(120)\nkind: varchar(16)\ncolor: varchar(16)?\nsort_order: integer\narchived: bool\nmonthly_estimate: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)\nUQ(user_id, name)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "CATEGORIES\n──────────────\nPK  id: integer\nname: varchar(120)\nkind: varchar(16)\ncolor: varchar(16)?\nsort_order: integer\narchived: bool\nmonthly_estimate: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)\nUQ(user_id, name)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 213,
+      "height": 283,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9109,
+      "version": 2,
+      "versionNonce": 9109,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-tags",
+      "type": "rectangle",
+      "x": 1050,
+      "y": 1050,
+      "width": 310,
+      "height": 261,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#e3fafc",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-tags",
+      "type": "text",
+      "x": 1068,
+      "y": 1067,
+      "text": "TAGS\n────────\nPK  id: integer\nname: varchar(80)\ncolor: varchar(16)?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)\nUQ(user_id, name)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "TAGS\n────────\nPK  id: integer\nname: varchar(80)\ncolor: varchar(16)?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)\nUQ(user_id, name)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 213,
+      "height": 227,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9110,
+      "version": 2,
+      "versionNonce": 9110,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-transactions",
+      "type": "rectangle",
+      "x": 1700,
+      "y": 650,
+      "width": 525,
+      "height": 504,
+      "strokeColor": "#7048e8",
+      "backgroundColor": "#e5dbff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-transactions",
+      "type": "text",
+      "x": 1718,
+      "y": 667,
+      "text": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 489,
+      "height": 470,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9111,
+      "version": 2,
+      "versionNonce": 9111,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-transaction-tags",
+      "type": "rectangle",
+      "x": 1750,
+      "y": 1220,
+      "width": 314,
+      "height": 129,
+      "strokeColor": "#7048e8",
+      "backgroundColor": "#e5dbff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-transaction-tags",
+      "type": "text",
+      "x": 1768,
+      "y": 1237,
+      "text": "TRANSACTION_TAGS\n────────────────────\nPK/FK  transaction_id: integer\nPK/FK  tag_id: integer\nFK/IX  user_id: integer",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "TRANSACTION_TAGS\n────────────────────\nPK/FK  transaction_id: integer\nPK/FK  tag_id: integer\nFK/IX  user_id: integer",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 278,
+      "height": 95,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9112,
+      "version": 2,
+      "versionNonce": 9112,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-transfers",
+      "type": "rectangle",
+      "x": 1200,
+      "y": 1346,
+      "width": 360,
+      "height": 279,
+      "strokeColor": "#7048e8",
+      "backgroundColor": "#e5dbff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-transfers",
+      "type": "text",
+      "x": 1218,
+      "y": 1363,
+      "text": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 287,
+      "height": 245,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9113,
+      "version": 2,
+      "versionNonce": 9113,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-goals",
+      "type": "rectangle",
+      "x": 2700,
+      "y": 100,
+      "width": 350,
+      "height": 336,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-goals",
+      "type": "text",
+      "x": 2718,
+      "y": 117,
+      "text": "GOALS\n─────────\nPK  id: integer\nname: varchar(160)\ntarget_amount_minor: money\ntarget_date: date?\ninitial_reserved_minor: money\npriority: integer\ncolor: varchar(16)?\nstatus: varchar(24)\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "GOALS\n─────────\nPK  id: integer\nname: varchar(160)\ntarget_amount_minor: money\ntarget_date: date?\ninitial_reserved_minor: money\npriority: integer\ncolor: varchar(16)?\nstatus: varchar(24)\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 268,
+      "height": 302,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9114,
+      "version": 2,
+      "versionNonce": 9114,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-plan-items",
+      "type": "rectangle",
+      "x": 2400,
+      "y": 650,
+      "width": 420,
+      "height": 504,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-plan-items",
+      "type": "text",
+      "x": 2418,
+      "y": 667,
+      "text": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 250,
+      "height": 470,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9115,
+      "version": 2,
+      "versionNonce": 9115,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-plan-item-tags",
+      "type": "rectangle",
+      "x": 2470,
+      "y": 1220,
+      "width": 295,
+      "height": 129,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-plan-item-tags",
+      "type": "text",
+      "x": 2488,
+      "y": 1237,
+      "text": "PLAN_ITEM_TAGS\n──────────────────\nPK/FK  plan_item_id: integer\nPK/FK  tag_id: integer\nFK/IX  user_id: integer",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "PLAN_ITEM_TAGS\n──────────────────\nPK/FK  plan_item_id: integer\nPK/FK  tag_id: integer\nFK/IX  user_id: integer",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 259,
+      "height": 95,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9116,
+      "version": 2,
+      "versionNonce": 9116,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-plan-overrides",
+      "type": "rectangle",
+      "x": 2400,
+      "y": 1420,
+      "width": 360,
+      "height": 242,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-plan-overrides",
+      "type": "text",
+      "x": 2418,
+      "y": 1437,
+      "text": "PLAN_OVERRIDES\n──────────────────\nPK  id: integer\nFK/IX  plan_item_id: integer\nmonth: varchar(7)\namount_minor: money?\ncancelled: bool\nmoved_date: date?\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, plan_item_id, month)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "PLAN_OVERRIDES\n──────────────────\nPK  id: integer\nFK/IX  plan_item_id: integer\nmonth: varchar(7)\namount_minor: money?\ncancelled: bool\nmoved_date: date?\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, plan_item_id, month)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 296,
+      "height": 208,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9117,
+      "version": 2,
+      "versionNonce": 9117,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-plan-matches",
+      "type": "rectangle",
+      "x": 2850,
+      "y": 1420,
+      "width": 360,
+      "height": 242,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-plan-matches",
+      "type": "text",
+      "x": 2868,
+      "y": 1437,
+      "text": "PLAN_MATCHES\n────────────────\nPK  id: integer\nFK/IX  plan_item_id: integer\nIX  occurrence_month: varchar(7)\nFK  transaction_id: integer\namount_minor: money\ncompleted: bool\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, transaction_id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "PLAN_MATCHES\n────────────────\nPK  id: integer\nFK/IX  plan_item_id: integer\nIX  occurrence_month: varchar(7)\nFK  transaction_id: integer\namount_minor: money\ncompleted: bool\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, transaction_id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 296,
+      "height": 208,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9118,
+      "version": 2,
+      "versionNonce": 9118,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-budget-limits",
+      "type": "rectangle",
+      "x": 650,
+      "y": 1550,
+      "width": 360,
+      "height": 261,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-budget-limits",
+      "type": "text",
+      "x": 668,
+      "y": 1567,
+      "text": "BUDGET_LIMITS\n─────────────────\nPK  id: integer\nFK/IX  category_id: integer\namount_minor: money\nstart_month: varchar(7)\nend_month: varchar(7)?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "BUDGET_LIMITS\n─────────────────\nPK  id: integer\nFK/IX  category_id: integer\namount_minor: money\nstart_month: varchar(7)\nend_month: varchar(7)?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 250,
+      "height": 227,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9119,
+      "version": 2,
+      "versionNonce": 9119,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-budget-limit-overrides",
+      "type": "rectangle",
+      "x": 650,
+      "y": 1846,
+      "width": 360,
+      "height": 204,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-budget-limit-overrides",
+      "type": "text",
+      "x": 668,
+      "y": 1863,
+      "text": "BUDGET_LIMIT_OVERRIDES\n────────────────────\nPK  id: integer\nFK  budget_limit_id: integer\nmonth: varchar(7)\namount_minor: money\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, budget_limit_id, month)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "BUDGET_LIMIT_OVERRIDES\n────────────────────\nPK  id: integer\nFK  budget_limit_id: integer\nmonth: varchar(7)\namount_minor: money\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, budget_limit_id, month)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 324,
+      "height": 170,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9120,
+      "version": 2,
+      "versionNonce": 9120,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-budget-months",
+      "type": "rectangle",
+      "x": 1050,
+      "y": 1750,
+      "width": 330,
+      "height": 167,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-budget-months",
+      "type": "text",
+      "x": 1068,
+      "y": 1767,
+      "text": "BUDGET_MONTHS\n─────────────────\nPK/FK  user_id: integer\nPK  month: varchar(7)\nstatus: varchar(12)\nclosed_at: datetime?\nversion: integer",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "BUDGET_MONTHS\n─────────────────\nPK/FK  user_id: integer\nPK  month: varchar(7)\nstatus: varchar(12)\nclosed_at: datetime?\nversion: integer",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 213,
+      "height": 133,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9121,
+      "version": 2,
+      "versionNonce": 9121,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-loans",
+      "type": "rectangle",
+      "x": 3300,
+      "y": 500,
+      "width": 420,
+      "height": 448,
+      "strokeColor": "#e03131",
+      "backgroundColor": "#ffe3e3",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-loans",
+      "type": "text",
+      "x": 3318,
+      "y": 517,
+      "text": "LOANS\n─────────\nPK  id: integer\nname: varchar(160)\ncreditor: varchar(160)?\nprincipal_minor: money?\nprincipal_as_of: date?\nannual_rate_bps: integer?\ninterest_method: varchar(16)\nschedule_mode: varchar(16)\nfirst_payment_date: date?\nannuity_payment_minor: money?\nFK  account_id: integer?\nstart_date: date?\nend_date: date?\ncomment: text?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "LOANS\n─────────\nPK  id: integer\nname: varchar(160)\ncreditor: varchar(160)?\nprincipal_minor: money?\nprincipal_as_of: date?\nannual_rate_bps: integer?\ninterest_method: varchar(16)\nschedule_mode: varchar(16)\nfirst_payment_date: date?\nannuity_payment_minor: money?\nFK  account_id: integer?\nstart_date: date?\nend_date: date?\ncomment: text?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 268,
+      "height": 414,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9122,
+      "version": 2,
+      "versionNonce": 9122,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-loan-schedule-items",
+      "type": "rectangle",
+      "x": 3830,
+      "y": 900,
+      "width": 360,
+      "height": 317,
+      "strokeColor": "#e03131",
+      "backgroundColor": "#ffe3e3",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-loan-schedule-items",
+      "type": "text",
+      "x": 3848,
+      "y": 917,
+      "text": "LOAN_SCHEDULE_ITEMS\n────────────────────\nPK  id: integer\nFK/IX  loan_id: integer\nIX  due_date: date\namount_minor: money\nprincipal_minor: money?\ninterest_minor: money?\nstatus: varchar(20)\npaid_minor: money\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "LOAN_SCHEDULE_ITEMS\n────────────────────\nPK  id: integer\nFK/IX  loan_id: integer\nIX  due_date: date\namount_minor: money\nprincipal_minor: money?\ninterest_minor: money?\nstatus: varchar(20)\npaid_minor: money\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 213,
+      "height": 283,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9123,
+      "version": 2,
+      "versionNonce": 9123,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-goal-reserve-movements",
+      "type": "rectangle",
+      "x": 3300,
+      "y": 1400,
+      "width": 380,
+      "height": 279,
+      "strokeColor": "#f08c00",
+      "backgroundColor": "#fff3bf",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-goal-reserve-movements",
+      "type": "text",
+      "x": 3318,
+      "y": 1417,
+      "text": "GOAL_RESERVE_MOVEMENTS\n────────────────────\nPK  id: integer\nFK/IX  goal_id: integer\nIX  kind: varchar(16)\namount_minor: money\nIX  date: date\nFK  transaction_id: integer?\ncomment: text?\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, transaction_id)\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "GOAL_RESERVE_MOVEMENTS\n────────────────────\nPK  id: integer\nFK/IX  goal_id: integer\nIX  kind: varchar(16)\namount_minor: money\nIX  date: date\nFK  transaction_id: integer?\ncomment: text?\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, transaction_id)\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 259,
+      "height": 245,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9124,
+      "version": 2,
+      "versionNonce": 9124,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-salary-rules",
+      "type": "rectangle",
+      "x": 4300,
+      "y": 250,
+      "width": 410,
+      "height": 411,
+      "strokeColor": "#2b8a3e",
+      "backgroundColor": "#d3f9d8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-salary-rules",
+      "type": "text",
+      "x": 4318,
+      "y": 267,
+      "text": "SALARY_RULES\n────────────────\nPK  id: integer\nname: varchar(160)\ngross_minor: money\nadvance_share_bps: integer\nadvance_day: integer\nsalary_day: integer\nstart_month: varchar(7)\nend_month: varchar(7)?\ninitial_tax_base_minor: money\ninitial_tax_year: integer?\nFK  account_id: integer?\nFK  category_id: integer?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "SALARY_RULES\n────────────────\nPK  id: integer\nname: varchar(160)\ngross_minor: money\nadvance_share_bps: integer\nadvance_day: integer\nsalary_day: integer\nstart_month: varchar(7)\nend_month: varchar(7)?\ninitial_tax_base_minor: money\ninitial_tax_year: integer?\nFK  account_id: integer?\nFK  category_id: integer?\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 268,
+      "height": 377,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9125,
+      "version": 2,
+      "versionNonce": 9125,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-salary-matches",
+      "type": "rectangle",
+      "x": 4800,
+      "y": 700,
+      "width": 350,
+      "height": 242,
+      "strokeColor": "#2b8a3e",
+      "backgroundColor": "#d3f9d8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 2
+    },
+    {
+      "id": "txt-salary-matches",
+      "type": "text",
+      "x": 4818,
+      "y": 717,
+      "text": "SALARY_MATCHES\n──────────────────\nPK  id: integer\nFK/IX  salary_rule_id: integer\nearning_month: varchar(7)\ncomponent: varchar(16)\nFK  transaction_id: integer\namount_minor: money\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, transaction_id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "SALARY_MATCHES\n──────────────────\nPK  id: integer\nFK/IX  salary_rule_id: integer\nearning_month: varchar(7)\ncomponent: varchar(16)\nFK  transaction_id: integer\namount_minor: money\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, transaction_id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 278,
+      "height": 208,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 9126,
+      "version": 2,
+      "versionNonce": 9126,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    }
+  ],
+  "appState": {
+    "gridSize": null,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}

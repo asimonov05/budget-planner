@@ -13,19 +13,7 @@ npx --prefix e2e playwright install chromium
 
 `backend/pyproject.toml` описывает runtime- и dev-зависимости, а `backend/uv.lock` фиксирует весь граф. Frontend и E2E используют отдельные `package-lock.json`. В Dockerfile также закреплены версии uv, Python 3.13 и Node 22, но успешные локальные unit-тесты не заменяют сборку и smoke именно текущего образа.
 
-Для локальной разработки без Docker запустите API и Vite в двух терминалах. База этого режима будет находиться в `backend/budget.sqlite3`:
-
-```bash
-cd backend
-uv run --locked python -m app.cli init-admin
-uv run --locked python -m app.start
-```
-
-```bash
-npm --prefix frontend run dev
-```
-
-Vite откроется на <http://127.0.0.1:5173> и проксирует `/api` на порт 8000.
+Для локального запуска в актуальной конфигурации используйте `docker compose up -d --build`: отдельный migration job сначала поднимает PostgreSQL-схему, затем стартует API. Запуск API напрямую с локальным PostgreSQL требует `DATABASE_URL` и секрет роли. Исторический SQLite fallback и SQLite-fixtures остаются переходным долгом [TD-003](technical-debt.md), а не поддерживаемым production-режимом.
 
 ## Команды проверок
 
@@ -38,7 +26,7 @@ make smoke            # отдельный Compose project: build, wait, ready, 
 make acceptance       # lint, unit/integration, build, Compose smoke и Playwright
 ```
 
-`make smoke` и `make acceptance` используют Compose project `budget-planner-smoke` и порт `18080` по умолчанию; их можно изменить через `SMOKE_PROJECT` и `SMOKE_PORT`. Завершающий `down` не передает `-v`, поэтому named volumes сохраняются. Не направляйте smoke на production project и не удаляйте production volumes ради чистого теста.
+`make smoke` и `make acceptance` используют Compose project `budget-planner-smoke` и порт `18080` по умолчанию; их можно изменить через `SMOKE_PROJECT` и `SMOKE_PORT`. Для этих команд требуются `.secrets/postgres-password`, `.secrets/postgres-runtime-password` и `.secrets/postgres-debug-admin-password`. Завершающий `down` не передает `-v`, поэтому named volumes сохраняются. Не направляйте smoke на production project и не удаляйте production volumes ради чистого теста.
 
 Playwright не создает владельца и не сбрасывает сервер. Гостевые сценарии login/360 px запускаются всегда. Для двух authenticated smoke-сценариев заранее создайте тестового владельца и передайте учетные данные только окружением:
 
@@ -56,10 +44,10 @@ npm --prefix e2e test
 ## Уровни
 
 - Unit/property: расчетное ядро, парсер денег, календарные правила, распределение копеек, `F=C-R`, нулевой итог переводов, double-counting и idempotency.
-- Integration: API + временный файловый SQLite, транзакционные границы, 409, auth/CSRF/origin, импорт, канонический round-trip и backup/restore. `:memory:` не заменяет файловые тесты.
+- Integration: текущий backend suite ещё использует SQLite fixture (TD-003). Дополнительно на disposable PostgreSQL проверены миграции `0007` и `0008`, RLS, составные FK, регистрация с отдельным бюджетом и авторизованный API/ZIP smoke. Physical backup/restore проверяется отдельно инфраструктурой PostgreSQL.
 - Frontend: Vitest/Testing Library для loading/empty/error, форм, API-контракта, переводов, сверки плана с фактом, кредитных оплат, движений резерва цели, закрытия месяца и обмена данными.
 - E2E: Playwright против production-style сервера для входа, основных переходов и ширины 360 px.
-- Container: миграция, фактически загруженная SQLite, непривилегированный пользователь, read-only root, persistence named volumes, отсутствие внешних runtime-зависимостей и обе архитектуры.
+- Container: отдельный migration job, перенос owner из `budget_auth` в `budget`, RLS, `pg_dump`/`pg_restore` вне приложения, непривилегированный runtime, read-only root и persistence named volume.
 
 ## Правила фиксации результата
 
@@ -67,7 +55,7 @@ npm --prefix e2e test
 
 Отдельно различайте:
 
-- unit/integration restore на временной файловой БД и полный Compose-drill с остановкой приложения;
+- unit/integration ZIP round-trip и отдельный инфраструктурный PostgreSQL restore-drill;
 - прохождение `docker compose config` и реальную сборку/запуск текущего образа;
 - Playwright с skipped authenticated-тестами и полный прогон с учетными данными;
 - разовый замер производительности и воспроизводимый benchmark с fixture и сохраненным протоколом.
@@ -86,4 +74,4 @@ uv run --locked --project backend --directory backend python scripts/benchmark_f
 
 ## Известные пробелы приемки
 
-До release-кандидата остаются, как минимум, чистая multi-stage сборка последнего дерева, `linux/amd64`, container benchmark с RSS/CPU и более глубокое browser-покрытие. Текущие code/static слои на `linux/arm64` уже прошли Compose ready/persistence/restore поверх ранее полностью собранного runtime, а 4/4 Playwright — против свежей Alembic-БД и production-style Uvicorn/static SPA. Функциональные пробелы перечислены построчно в [acceptance-status.md](acceptance-status.md).
+До release-кандидата остаются, как минимум, чистая multi-stage сборка последнего дерева, `linux/amd64`, container benchmark с RSS/CPU и более глубокое browser-покрытие. Текущий код прошёл Compose ready после миграций `0007` и `0008` и `0008` и пробное восстановление dump в отдельную базу. Исторические результаты прежнего runtime сохранены в [acceptance-status.md](acceptance-status.md). Функциональные пробелы перечислены построчно в [acceptance-status.md](acceptance-status.md).

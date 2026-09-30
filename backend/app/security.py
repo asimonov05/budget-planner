@@ -1,41 +1,25 @@
 from __future__ import annotations
 
-import hashlib
 import secrets
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
-from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .config import config
-from .db import get_db
+from .db import SessionLocal, get_auth_db, reserve_write_slot
+from .infrastructure.credentials import (
+    hash_password as hash_password,
+    hash_token,
+    verify_password as verify_password,
+)
 from .models import SessionToken, User
 
 
-password_hasher = PasswordHasher(
-    time_cost=3, memory_cost=65536, parallelism=4, hash_len=32, salt_len=16
-)
 login_attempts: dict[str, deque[float]] = defaultdict(deque)
-
-
-def hash_token(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
-def hash_password(password: str) -> str:
-    return password_hasher.hash(password)
-
-
-def verify_password(password_hash: str, password: str) -> bool:
-    try:
-        return password_hasher.verify(password_hash, password)
-    except (VerificationError, InvalidHashError):
-        return False
 
 
 def enforce_login_rate(key: str) -> None:
@@ -54,6 +38,12 @@ def clear_login_rate(key: str) -> None:
 
 def create_session(db: Session, user: User) -> tuple[str, str]:
     token, csrf = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
+    db.info["user_id"] = user.id
+    if db.bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT set_config('app.current_user_id', :user_id, true)"),
+            {"user_id": str(user.id)},
+        )
     db.add(
         SessionToken(
             user_id=user.id,
@@ -69,25 +59,32 @@ def create_session(db: Session, user: User) -> tuple[str, str]:
 def current_session(
     request: Request,
     budget_session: str | None = Cookie(None),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_auth_db),
 ) -> tuple[User, SessionToken]:
     if not budget_session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
-    session = db.scalar(
-        select(SessionToken).where(SessionToken.token_hash == hash_token(budget_session))
-    )
+    token_hash = hash_token(budget_session)
+    db.info["session_token_hash"] = token_hash
+    session = db.scalar(select(SessionToken).where(SessionToken.token_hash == token_hash))
     now = datetime.now(timezone.utc)
     if not session or session.revoked or session.expires_at.replace(tzinfo=timezone.utc) <= now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
     user = db.get(User, session.user_id)
-    if not user:
+    if not user or not user.active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
     request.state.auth_session = session
     return user, session
+
+
+def get_db(auth: tuple[User, SessionToken] = Depends(current_session)):
+    """Financial session scoped to the authenticated user in the shared database."""
+    with SessionLocal() as db:
+        db.info["user_id"] = auth[0].id
+        yield db
 
 
 def require_user(auth: tuple[User, SessionToken] = Depends(current_session)) -> User:
@@ -110,11 +107,11 @@ def require_csrf(
             allowed = {str(request.base_url).rstrip("/")}
             if origin.rstrip("/") not in allowed:
                 raise HTTPException(status_code=403, detail="Origin not allowed")
-        # Take the SQLite writer reservation only after authentication and CSRF
-        # validation, but before the endpoint performs its first financial read.
-        # This turns write races into deterministic version conflicts rather
-        # than SQLITE_BUSY_SNAPSHOT and protects read-check-write invariants.
-        db.execute(text("BEGIN IMMEDIATE"))
+        # Serialize financial read-check-write operations inside this budget.
+        reserve_write_slot(db)
+        current = db.get(SessionToken, auth[1].id)
+        if not current or current.revoked:
+            raise HTTPException(status_code=401, detail="Session expired")
     return auth[0]
 
 

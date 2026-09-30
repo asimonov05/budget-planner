@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI
-from sqlalchemy import Integer, String, select
+from sqlalchemy import Integer, String, create_engine, select
 from sqlalchemy.orm import Mapper
 from sqladmin import Admin, ModelView
 from sqladmin.audit import AuditEntry, DBAuditBackend
@@ -18,7 +18,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .config import config
-from .db import Base, SessionLocal, engine
+from .db import Base, SessionLocal, database_connect_args
 from .models import AuditLog, User
 from .security import clear_login_rate, enforce_login_rate, verify_password
 
@@ -140,7 +140,7 @@ class OwnerAdminAuthentication(AuthenticationBackend):
         enforce_login_rate(remote)
         with SessionLocal() as db:
             user = db.scalar(select(User).where(User.username == username)) if username else None
-            if not user or not verify_password(user.password_hash, password):
+            if not user or not user.active or not user.is_admin or not verify_password(user.password_hash, password):
                 return False
             user_id = user.id
             password_fingerprint = _password_fingerprint(user.password_hash)
@@ -170,6 +170,8 @@ class OwnerAdminAuthentication(AuthenticationBackend):
             user = db.get(User, user_id)
             return bool(
                 user
+                and user.active
+                and user.is_admin
                 and hmac.compare_digest(
                     password_fingerprint, _password_fingerprint(user.password_hash)
                 )
@@ -198,6 +200,9 @@ class DebugModelView(ModelView):
     page_size = 50
     page_size_options = [25, 50, 100]
     can_import = False
+    can_create = False
+    can_edit = False
+    can_delete = False
 
     async def on_model_change(
         self, data: dict[str, Any], model: Any, is_created: bool, request: Request
@@ -245,14 +250,6 @@ def _admin_view(model: type, mapper: Mapper[Any]) -> type[ModelView]:
         and prop.columns
         and isinstance(prop.columns[0].type, String)
     ]
-    required_hidden_fields = any(
-        not column.nullable
-        and column.default is None
-        and column.server_default is None
-        and not column.primary_key
-        for column in mapper.columns
-        if not _safe_column(column.key)
-    )
     attrs: dict[str, Any] = {
         "__module__": __name__,
         "name": singular,
@@ -272,7 +269,9 @@ def _admin_view(model: type, mapper: Mapper[Any]) -> type[ModelView]:
         },
         "form_columns": form_columns,
         "form_include_pk": needs_manual_primary_key,
-        "can_create": not required_hidden_fields,
+        "can_create": False,
+        "can_edit": False,
+        "can_delete": False,
     }
     if model in {User, AuditLog}:
         attrs.update(can_create=False, can_edit=False, can_delete=False)
@@ -280,15 +279,25 @@ def _admin_view(model: type, mapper: Mapper[Any]) -> type[ModelView]:
 
 
 def install_debug_admin(app: FastAPI) -> None:
+    if not config.debug_database_url or not config.debug_database_password_file:
+        raise RuntimeError("Debug admin requires its dedicated PostgreSQL role")
+    debug_engine = create_engine(
+        config.debug_database_url,
+        connect_args=database_connect_args(
+            config.debug_database_url, config.debug_database_password_file
+        ),
+        pool_pre_ping=True,
+    )
     admin = Admin(
         app=app,
-        engine=engine,
+        engine=debug_engine,
         base_url="/admin",
         title="Контур · админка",
         authentication_backend=OwnerAdminAuthentication(),
         authorization_backend=None,
-        audit_backend=AdminAuditBackend(SessionLocal),
+        audit_backend=None,
         i18n_config=I18nConfig(default_locale="ru"),
     )
-    for mapper in sorted(Base.registry.mappers, key=lambda item: item.local_table.name):
-        admin.add_view(_admin_view(mapper.class_, mapper))
+    for mapper in Base.registry.mappers:
+        if mapper.class_.__tablename__ != "alembic_version":
+            admin.add_view(_admin_view(mapper.class_, mapper))

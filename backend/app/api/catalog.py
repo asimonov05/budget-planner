@@ -8,13 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..db import get_db
 from ..models import (
     Account,
     AppSettings,
     AuditLog,
     BudgetLimit,
-    BudgetMonth,
     Category,
     Loan,
     PlanItem,
@@ -38,7 +36,8 @@ from ..schemas import (
     TagOut,
     TagUpdate,
 )
-from ..security import require_csrf, require_user
+from ..security import get_db, require_csrf, require_user
+from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
 
 
 router = APIRouter(tags=["catalog"])
@@ -58,7 +57,7 @@ def ensure_version(value, version: int) -> None:
 
 
 def ensure_open(db: Session, value) -> None:
-    month = db.get(BudgetMonth, value.strftime("%Y-%m"))
+    month = budget_month_for_user(db, value.strftime("%Y-%m"))
     if month and month.status == "closed":
         raise HTTPException(
             status_code=409,
@@ -81,9 +80,9 @@ def audit_delete(db: Session, entity_type: str, value) -> None:
 
 @router.get("/settings", response_model=SettingsOut)
 def get_settings(_=Depends(require_user), db: Session = Depends(get_db)) -> AppSettings:
-    value = db.get(AppSettings, 1)
+    value = settings_for_user(db)
     if not value:
-        value = AppSettings(id=1)
+        value = AppSettings(user_id=tenant_id(db))
         db.add(value)
         db.commit()
         db.refresh(value)
@@ -94,7 +93,7 @@ def get_settings(_=Depends(require_user), db: Session = Depends(get_db)) -> AppS
 def update_settings(
     body: SettingsUpdate, _=Depends(require_csrf), db: Session = Depends(get_db)
 ) -> AppSettings:
-    value = db.get(AppSettings, 1)
+    value = settings_for_user(db)
     if not value:
         missing("Settings")
     if value.version != body.version:
@@ -160,7 +159,7 @@ def account_balance(db: Session, account: Account, as_of: date) -> int:
 def list_accounts(
     include_archived: bool = False, _=Depends(require_user), db: Session = Depends(get_db)
 ) -> dict:
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     try:
         zone = ZoneInfo(settings.timezone if settings else "Europe/Moscow")
     except (ZoneInfoNotFoundError, ValueError):

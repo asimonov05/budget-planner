@@ -33,6 +33,26 @@ class SettingsUpdate(VersionedUpdate):
     salary_enabled: bool | None = None
 
 
+class PrivateUserCreate(BaseModel):
+    username: str = Field(pattern=r"^[a-z][a-z0-9_.-]{2,79}$")
+    password: str = Field(min_length=12, max_length=512)
+
+
+class PrivateUserOut(ORMModel):
+    id: int
+    username: str
+    is_admin: bool
+    active: bool
+
+
+class PrivateUserStatus(BaseModel):
+    active: bool
+
+
+class PrivateUserPassword(BaseModel):
+    password: str = Field(min_length=12, max_length=512)
+
+
 MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
 
 

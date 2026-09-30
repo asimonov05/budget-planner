@@ -20,6 +20,7 @@ describe('settings directories', () => {
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined })
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
+      if (path === '/api/v1/auth/me') return jsonResponse({ id: 1, username: 'owner', is_admin: true })
       if (path === '/api/v1/settings') return jsonResponse({ currency: 'RUB', timezone: 'Europe/Moscow', accounting_start_date: '2026-01-01', version: 1 })
       if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [
         { id: 1, name: 'Карта', type: 'bank', initial_balance_minor: 0, initial_balance_date: '2026-01-01', current_balance_minor: 50_000, archived: false, version: 3 },
@@ -139,6 +140,7 @@ describe('settings directories', () => {
   it('creates a gross salary rule for a separate employer', async () => {
     fetchMock.mockImplementation(async (input, init) => {
       const path = String(input)
+      if (path === '/api/v1/auth/me') return jsonResponse({ id: 1, username: 'owner', is_admin: true })
       if (path === '/api/v1/settings') return jsonResponse({ currency: 'RUB', timezone: 'Europe/Moscow', accounting_start_date: '2026-01-01', salary_enabled: true, version: 2 })
       if (path === '/api/v1/salary-rules?include_archived=true') return jsonResponse({ items: [], total: 0 })
       if (path.startsWith('/api/v1/salary-payments?')) return jsonResponse({ items: [], total: 0 })
@@ -160,5 +162,27 @@ describe('settings directories', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/salary-rules' && request?.method === 'POST')).toBe(true))
     const [, request] = fetchMock.mock.calls.find(([url, options]) => url === '/api/v1/salary-rules' && options?.method === 'POST')!
     expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ name: 'Работодатель А', gross_minor: 10_000_000, advance_share_bps: 4_000, account_id: 1 }))
+  })
+
+  it('creates a private budget for a new user', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/v1/auth/me') return jsonResponse({ id: 1, username: 'owner', is_admin: true })
+      if (path === '/api/v1/users' && init?.method === 'POST') return jsonResponse({ id: 2, username: 'alice', active: true, is_admin: false }, 201)
+      if (path === '/api/v1/users') return jsonResponse({ items: [{ id: 1, username: 'owner', active: true, is_admin: true }], total: 1 })
+      if (path === '/api/v1/settings') return jsonResponse({ currency: 'RUB', timezone: 'Europe/Moscow', accounting_start_date: '2026-01-01', version: 1 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    renderSettings()
+    fireEvent.click(await screen.findByRole('button', { name: 'Пользователи' }))
+    await screen.findByText(/Владелец · Доступ открыт/)
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+    fireEvent.change(screen.getByLabelText('Логин'), { target: { value: 'alice' } })
+    fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'alice strong passphrase' } })
+    fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'alice strong passphrase' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Создать пользователя' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/users' && request?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, options]) => url === '/api/v1/users' && options?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual({ username: 'alice', password: 'alice strong passphrase' })
   })
 })

@@ -5,10 +5,8 @@ import shutil
 from pathlib import Path
 
 from alembic import command
-from alembic.autogenerate import compare_metadata
 from alembic.config import Config
-from alembic.runtime.migration import MigrationContext
-from sqlalchemy import Column, Integer, Table, create_engine
+from sqlalchemy import Column, Integer, Table
 
 from app.db import Base
 
@@ -28,10 +26,10 @@ def test_alembic_creates_and_reopens_file_database(tmp_path: Path, monkeypatch):
         "future_model_table", Base.metadata, Column("id", Integer, primary_key=True)
     )
     try:
-        command.upgrade(alembic, "head")
+        command.upgrade(alembic, "0006")
     finally:
         Base.metadata.remove(future_table)
-    command.upgrade(alembic, "head")
+    command.upgrade(alembic, "0006")
 
     with sqlite3.connect(database) as connection:
         tables = {
@@ -45,13 +43,10 @@ def test_alembic_creates_and_reopens_file_database(tmp_path: Path, monkeypatch):
 
     assert {"accounts", "transactions", "goals", "alembic_version"} <= tables
     assert "future_model_table" not in tables
-    assert revision == ("0004",)
+    assert revision == ("0006",)
     assert foreign_key_errors == []
 
-    engine = create_engine(f"sqlite:///{database}")
-    with engine.connect() as connection:
-        assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
-    engine.dispose()
+    # Shared user scope is PostgreSQL-only; legacy SQLite migrations stop at 0006.
 
 
 def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
@@ -72,11 +67,11 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
             ("owner", "hash", "2026-01-01 00:00:00"),
         )
 
-    (versions / "versions" / "0005_test.py").write_text(
+    (versions / "versions" / "0009_test.py").write_text(
         "from alembic import op\n"
         "import sqlalchemy as sa\n"
-        "revision = '0005_test'\n"
-        "down_revision = '0004'\n"
+        "revision = '0009_test'\n"
+        "down_revision = '0008'\n"
         "branch_labels = None\n"
         "depends_on = None\n"
         "def upgrade():\n"
@@ -88,7 +83,7 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
     command.upgrade(alembic, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0005_test",
+            "0009_test",
         )
         assert connection.execute("SELECT username, display_name FROM users").fetchone() == (
             "owner",
@@ -150,7 +145,7 @@ def test_loan_migration_preserves_existing_plan_matches(tmp_path: Path):
             "VALUES (2, 'expense', 500, '2026-02-01', 1, 'Кредит', 'loan_schedule:1', '2026-02-01', '2026-02-01', 1)"
         )
 
-    command.upgrade(alembic, "head")
+    command.upgrade(alembic, "0006")
     with sqlite3.connect(database) as connection:
         assert connection.execute(
             "SELECT plan_item_id, transaction_id FROM plan_matches"

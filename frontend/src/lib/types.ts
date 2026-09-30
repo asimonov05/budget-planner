@@ -1,6 +1,6 @@
 export type ID = string | number
 
-export interface User { id?: ID; username: string; display_name?: string; debug_admin_enabled?: boolean }
+export interface User { id?: ID; username: string; display_name?: string; is_admin?: boolean; debug_admin_enabled?: boolean }
 export interface Account { id: ID; name: string; type?: string; balance_minor?: number; current_balance_minor?: number; initial_balance_minor?: number; initial_balance_date?: string; archived?: boolean; version?: number }
 export interface Category { id: ID; name: string; color?: string; kind?: 'income' | 'expense'; type?: 'income' | 'expense'; monthly_estimate?: boolean; archived?: boolean; version?: number }
 export interface Tag { id: ID; name: string; color?: string; archived?: boolean; version?: number }

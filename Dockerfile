@@ -41,21 +41,17 @@ ARG APP_GID=10001
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    DATABASE_PATH=/data/budget.sqlite3 \
-    BACKUP_DIR=/backups \
     STATIC_DIR=/app/static \
-    REQUIRE_SAFE_SQLITE=1 \
     PATH=/app/.venv/bin:$PATH
 
-RUN apk add --no-cache libffi sqlite-libs \
+RUN apk add --no-cache libffi \
     && addgroup -S -g "${APP_GID}" budget \
     && adduser -S -D -H -u "${APP_UID}" -G budget budget \
-    && mkdir -p /app/static /data /backups \
-    && chown -R budget:budget /app /data /backups
+    && mkdir -p /app/static \
+    && chown -R budget:budget /app
 
 WORKDIR /app
 COPY --from=backend-build --chown=budget:budget /app/.venv /app/.venv
-RUN python -c 'import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3), sqlite3.sqlite_version'
 
 COPY --chown=budget:budget backend/ ./
 COPY --from=frontend-build --chown=budget:budget /src/frontend/dist/ ./static/

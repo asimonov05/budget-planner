@@ -6,31 +6,26 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-
-from .config import config
-from .db import engine
+from .db import database_url, engine
 
 
-def alembic_config() -> Config:
+def alembic_config(url: str | None = None) -> Config:
     root = Path(__file__).resolve().parents[1]
     value = Config(str(root / "alembic.ini"))
     value.set_main_option("script_location", str(root / "alembic"))
-    value.set_main_option("sqlalchemy.url", f"sqlite:///{config.database_path}")
+    value.set_main_option("sqlalchemy.url", (url or database_url()).replace("%", "%%"))
     return value
 
 
-def migrate(backup_before_upgrade: bool = True) -> None:
+def migrate() -> None:
+    alembic = alembic_config()
+    command.upgrade(alembic, "head")
+
+
+def verify_schema_current() -> None:
     alembic = alembic_config()
     head = ScriptDirectory.from_config(alembic).get_current_head()
-    current = None
-    if config.database_path.exists() and config.database_path.stat().st_size:
-        try:
-            with engine.connect() as connection:
-                current = MigrationContext.configure(connection).get_current_revision()
-        except Exception:
-            current = None
-        if backup_before_upgrade and current != head:
-            from .api.io import create_backup
-
-            create_backup()
-    command.upgrade(alembic, "head")
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != head:
+        raise RuntimeError(f"Database migration required: {current or 'base'} -> {head}")

@@ -1,91 +1,38 @@
-# Резервное копирование и восстановление
+# Резервное копирование PostgreSQL
 
-## Три разных механизма
+Все пользователи, сессии и бюджеты находятся в одной базе `budget`. Физический backup выполняется через PostgreSQL вне приложения. Канонический ZIP в интерфейсе переносит финансовые данные одного пользователя и не содержит учётных записей.
 
-- Named volume обеспечивает постоянство данных при restart/recreate, но обычно остается на том же диске и не является бэкапом.
-- Физический SQLite backup — аварийный снимок конкретной установки. Он содержит финансовые данные, настройки, владельца и служебное состояние.
-- Канонический ZIP — перенос финансовой модели в пустую установку. Он не содержит владельца, пароля и сессий и не заменяет аварийный backup.
-
-Не копируйте `budget.sqlite3` обычным `cp` при работающем WAL-режиме: актуальные страницы могут находиться в `budget.sqlite3-wal`.
-
-## Создание backup
-
-Для запущенного Compose-приложения:
+## Создание копии
 
 ```bash
-docker compose exec app python -m app.cli backup
+mkdir -m 700 -p backups-external
+docker compose exec -T postgres pg_dump -U budget -d budget -Fc --no-owner --no-acl > backups-external/budget.dump
+docker compose exec -T postgres pg_restore --list < backups-external/budget.dump > /dev/null
 ```
 
-CLI использует `sqlite3.Connection.backup`, поэтому получает согласованный снимок работающей WAL-базы. Файл сначала пишется как временный в `/backups`, проходит `PRAGMA integrity_check` и `PRAGMA foreign_key_check`, синхронизируется на диск и публикуется атомарным rename. Имя содержит UTC-время и версию приложения; при совпадении секунды добавляется числовой суффикс.
-
-Посмотрите напечатанное имя и вынесите копию за пределы Docker-хоста:
-
-```bash
-docker compose cp app:/backups/ИМЯ.sqlite3 ./ИМЯ.sqlite3
-```
-
-Автоматической ротации пока нет. Храните хотя бы одну периодически проверяемую копию на другом физическом носителе. Backup содержит финансовые данные и password hash владельца: защищайте его правами файловой системы/шифрованием, не кладите в web-root и публичный репозиторий.
-
-## Внешнее расписание
-
-Внутреннего scheduler в P0 нет. Системный cron может вызывать CLI, например ежедневно в 03:15:
-
-```cron
-15 3 * * * cd /srv/budget-planner && /usr/bin/docker compose exec -T app python -m app.cli backup >> /var/log/budget-backup.log 2>&1
-```
-
-Проверьте абсолютные пути, права, мониторинг ошибки и собственную политику ротации. Сам факт создания файла еще не доказывает, что его можно восстановить.
-
-## Восстановление
-
-Восстановление меняет основную БД, поэтому основной контейнер должен быть остановлен. Используйте одноразовый контейнер с теми же named volumes:
-
-```bash
-docker compose stop app
-docker compose run --rm app python -m app.cli restore /backups/ИМЯ.sqlite3
-docker compose up -d
-docker compose ps
-curl --fail http://127.0.0.1:8082/api/v1/health/ready
-```
-
-До публикации CLI:
-
-1. открывает источник read-only;
-2. проверяет целостность, внешние ключи и известную ревизию из цепочки миграций Alembic;
-3. создает отдельный backup заменяемой БД, если она существует;
-4. копирует источник через SQLite Online Backup API во временный файл;
-5. отзывает все восстановленные сессии и повторяет проверки;
-6. удаляет старые `-wal`, `-shm` и `-journal`, атомарно заменяет основной файл и синхронизирует каталог.
-
-После восстановления войдите заново. Не запускайте restore параллельно с приложением и не пытайтесь открыть более новую неизвестную схему старым образом.
-
-Если файл находится только на хосте, смонтируйте его read-only:
-
-```bash
-docker compose stop app
-docker compose run --rm \
-  -v "$(pwd)/ИМЯ.sqlite3:/restore/backup.sqlite3:ro" app \
-  python -m app.cli restore /restore/backup.sqlite3
-docker compose up -d
-```
-
-Не монтируйте недоверенный каталог шире необходимого. Путь backup передавайте как отдельный аргумент, не собирайте команду из непроверенного имени файла.
+`.dump` содержит финансовые данные, пароли в виде хешей и активные сессии. Храните его на другом носителе с ограниченным доступом и шифрованием. Каталог `backups-external` находится на хосте, а не в Compose volume приложения. Проверка списка объектов подтверждает читаемость файла, но не заменяет пробное восстановление.
 
 ## Проверка восстановления
 
-Полный drill выполняйте на копии проекта/отдельных volumes, не поверх production:
+Создайте отдельную пустую тестовую базу в PostgreSQL и восстановите копию туда:
 
-1. создайте контрольные счета, операции, планы, связи, цели и сессию;
-2. запишите число сущностей и месячные итоги;
-3. создайте и вынесите backup;
-4. измените тестовые данные;
-5. остановите приложение, выполните restore и снова запустите его;
-6. проверьте `integrity_check`, пустой `foreign_key_check`, revision, counts и месячные итоги;
-7. убедитесь, что старая сессия недействительна, а restart и ready healthcheck успешны.
+```bash
+docker compose exec -T postgres createdb -U budget budget_restore_test
+docker compose exec -T postgres pg_restore -U budget --no-owner --no-acl --exit-on-error -d budget_restore_test < backups-external/budget.dump
+docker compose exec -T postgres psql -U budget -d budget_restore_test -Atc 'SELECT version_num FROM alembic_version; SELECT count(*) FROM users; SELECT count(*) FROM accounts;'
+```
 
-Автоматические тесты сейчас подтверждают две части процедуры:
+Перед окончательным выводом об успешном восстановлении сравните контрольные суммы/количество строк по всем таблицам и выполните на тестовой базе авторизованный API smoke. Тестовую базу удаляйте только после проверки.
 
-- `test_project_export_is_safe_zip_and_backup_valid` — созданный Online Backup открывается и проходит integrity/FK checks;
-- `test_restore_publishes_checked_database_without_old_sessions_or_sidecars` — на тестовой файловой БД restore возвращает контрольный счет, удаляет старые WAL/SHM sidecars и сессии.
+## Восстановление рабочей базы
 
-Дополнительно 21 сентября 2026 года проведён изолированный Compose-drill: app остановлен, restore выполнен в одноразовом контейнере, повторный ready прошёл, тестовая запись после backup исчезла, исходный счёт вернулся, а старая сессия получила 401. Полное сравнение всех финансовых агрегатов для большого fixture остаётся отдельной проверкой. Текущий статус фиксируется в [acceptance-status.md](acceptance-status.md), сценарий 32.
+Остановите API и миграционный job, сохраните свежую копию текущего состояния, затем восстановите совместимый dump. Для уже существующей базы:
+
+```bash
+docker compose stop app
+docker compose exec -T postgres pg_restore -U budget --no-owner --no-acl --clean --if-exists --single-transaction --exit-on-error -d budget < backups-external/budget.dump
+docker compose up -d --force-recreate migrate
+docker compose up -d app
+```
+
+Убедитесь, что migration job завершился успешно, `health/ready` отвечает 200, а данные каждого пользователя доступны только ему. Старый образ нельзя запускать на более новой схеме без совместимого dump. Для расписания, ротации и удалённого хранения backup используйте инфраструктуру хоста.

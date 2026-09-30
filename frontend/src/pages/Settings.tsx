@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, CheckCircle2, CirclePlus, DatabaseBackup, Download, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
-import { ApiError, api, asList, download, jsonBody, queryString } from '../lib/api'
+import { Archive, CheckCircle2, CirclePlus, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
+import { ApiError, api, asList, jsonBody, queryString } from '../lib/api'
 import { formatMoney, parseMoney, todayISO } from '../lib/format'
 import { useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
 import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { SalarySettings } from '../components/SalarySettings'
+import { PrivateUsers } from '../components/PrivateUsers'
+import type { User } from '../lib/types'
 
-type Tab = 'general'|'salary'|'appearance'|'accounts'|'categories'|'tags'|'backups'
+type Tab = 'general'|'salary'|'appearance'|'accounts'|'categories'|'tags'|'users'
 interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; salary_enabled: boolean; version: number }
-interface Backup { name: string; created_at: string; size: number }
 type DirectoryKind = 'accounts'|'categories'|'tags'
 type DirectoryItem = Account|Category|Tag
 
@@ -27,7 +28,8 @@ export function SettingsPage() {
     const requested = new URLSearchParams(window.location.search).get('tab')
     return requested === 'salary' || requested === 'accounts' ? requested : 'general'
   })
-  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, справочники и резервные копии."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button><button className={tab==='backups'?'active':''} onClick={() => setTab('backups')}><DatabaseBackup/> Резервные копии</button></aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'backups' && <Backups/>}</section></div></div>
+  const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api('/auth/me') })
+  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, справочники."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button>{me.data?.is_admin && <button className={tab==='users'?'active':''} onClick={() => setTab('users')}><WalletCards/> Пользователи</button>}</aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'users' && me.data?.is_admin && <PrivateUsers/>}</section></div></div>
 }
 
 function GeneralSettings() {
@@ -35,7 +37,26 @@ function GeneralSettings() {
   const [draft, setDraft] = useState<Settings|null>(null); const value = draft ?? settings.data
   const save = useMutation({ mutationFn: () => api('/settings', { method: 'PATCH', body: jsonBody({ currency: value?.currency, timezone: value?.timezone, accounting_start_date: value?.accounting_start_date, version: value?.version }) }), onSuccess: () => { client.invalidateQueries({ queryKey: ['settings'] }); setDraft(null) } })
   if (settings.isLoading) return <State kind="loading" title="Загружаем настройки"/>; if (!value) return <State kind="error" title="Настройки недоступны"/>
-  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Бюджет</span><h2>Основные параметры</h2></div></div><div className="form-grid"><Field label="Валюта" hint="Нельзя просто переименовать суммы после начала учёта"><Select value={value.currency} onChange={(e) => setDraft({...value,currency:e.target.value})}><option value="RUB">RUB — российский рубль</option></Select></Field><Field label="Часовой пояс"><Input value={value.timezone} onChange={(e) => setDraft({...value,timezone:e.target.value})}/></Field><Field label="Дата начала учёта"><Input type="date" value={value.accounting_start_date ?? ''} onChange={(e) => setDraft({...value,accounting_start_date:e.target.value})}/></Field></div><div className="form-actions"><Button disabled={!draft || save.isPending} onClick={() => save.mutate()}>{save.isPending?'Сохраняем…':'Сохранить'}</Button></div>{save.isError && <div className="form-alert">{save.error.message}</div>}</Card>
+  return <><Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Бюджет</span><h2>Основные параметры</h2></div></div><div className="form-grid"><Field label="Валюта" hint="Нельзя просто переименовать суммы после начала учёта"><Select value={value.currency} onChange={(e) => setDraft({...value,currency:e.target.value})}><option value="RUB">RUB — российский рубль</option></Select></Field><Field label="Часовой пояс"><Input value={value.timezone} onChange={(e) => setDraft({...value,timezone:e.target.value})}/></Field><Field label="Дата начала учёта"><Input type="date" value={value.accounting_start_date ?? ''} onChange={(e) => setDraft({...value,accounting_start_date:e.target.value})}/></Field></div><div className="form-actions"><Button disabled={!draft || save.isPending} onClick={() => save.mutate()}>{save.isPending?'Сохраняем…':'Сохранить'}</Button></div>{save.isError && <div className="form-alert">{save.error.message}</div>}</Card><ResetBudget/></>
+}
+
+function ResetBudget() {
+  const client = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [done, setDone] = useState(false)
+  const reset = useMutation({
+    mutationFn: () => api('/budget/reset', { method: 'POST', body: jsonBody({ password, confirmation }) }),
+    onSuccess: () => {
+      client.clear()
+      setPassword('')
+      setConfirmation('')
+      setOpen(false)
+      setDone(true)
+    },
+  })
+  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Импорт</span><h2>Сбросить свой бюджет</h2></div></div><p>Удаляет ваши финансовые данные перед повторным импортом ZIP. Учётная запись и текущий вход сохраняются; остальные ваши сессии завершатся.</p><Button variant="secondary" onClick={() => { setDone(false); reset.reset(); setOpen(true) }}>Сбросить бюджет</Button>{done && <div className="notice notice--calm">Бюджет очищен. Теперь можно импортировать ZIP-архив проекта.</div>}{open && <Modal title="Сбросить свой бюджет" onClose={() => setOpen(false)}><div className="form-stack"><Field label="Текущий пароль"><Input type="password" value={password} onChange={(event) => setPassword(event.target.value)}/></Field><Field label="Напишите RESET"><Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/></Field>{reset.isError && <div className="form-alert" role="alert">{reset.error.message}</div>}<div className="form-actions"><Button variant="ghost" onClick={() => setOpen(false)}>Отмена</Button><Button disabled={!password || confirmation !== 'RESET' || reset.isPending} onClick={() => reset.mutate()}>{reset.isPending ? 'Сбрасываем…' : 'Подтвердить сброс'}</Button></div></div></Modal>}</Card>
 }
 
 const themeChoices: Array<{
@@ -196,9 +217,4 @@ function DirectoryForm({kind,item,onClose}:{kind:DirectoryKind;item?:DirectoryIt
     {save.isError&&<div className="form-alert" role="alert">{actionError(save.error)}</div>}
     <div className="form-actions"><Button variant="ghost" onClick={close}>Отмена</Button><Button disabled={!name.trim()||(!item&&kind==='accounts'&&!openingDate)||save.isPending} onClick={()=>save.mutate()}>{save.isPending?'Сохраняем…':item?'Сохранить изменения':'Добавить'}</Button></div>
   </div></Modal>
-}
-
-function Backups() {
-  const client=useQueryClient(); const backups=useQuery<Backup[]|ListResponse<Backup>>({queryKey:['backups'],queryFn:()=>api('/backups')}); const create=useMutation({mutationFn:()=>api('/backups',{method:'POST'}),onSuccess:()=>client.invalidateQueries({queryKey:['backups']})})
-  return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">SQLite</span><h2>Резервные копии</h2></div><Button onClick={()=>create.mutate()} disabled={create.isPending}><DatabaseBackup/> {create.isPending?'Создаём…':'Создать копию'}</Button></div><div className="notice notice--calm"><DatabaseBackup/><div><strong>Физическая копия базы</strong><span>Создаётся безопасно через SQLite Online Backup API. Для переноса финансов между установками используйте архив проекта.</span></div></div>{backups.isLoading?<State kind="loading" title="Загружаем список"/>:asList(backups.data).length?<div className="backup-list">{asList(backups.data).map((b)=><div key={b.name}><span><strong>{b.name}</strong><small>{new Date(b.created_at).toLocaleString('ru-RU')} · {b.size?`${(b.size/1024/1024).toFixed(1)} МБ`:'размер не указан'}</small></span><Button variant="secondary" onClick={()=>download(`/api/v1/backups/${encodeURIComponent(b.name)}`,b.name)}><Download/> Скачать</Button></div>)}</div>:<State title="Копий пока нет">Создайте первую копию и сохраните её на другом носителе.</State>}</Card>
 }

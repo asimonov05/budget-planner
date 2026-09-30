@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 TEST_DIR = Path(tempfile.mkdtemp(prefix="budget-tests-"))
 os.environ["DATABASE_PATH"] = str(TEST_DIR / "test.sqlite3")
-os.environ["BACKUP_DIR"] = str(TEST_DIR / "backups")
 os.environ["REQUIRE_SAFE_SQLITE"] = "0"
 
 from app.db import Base, SessionLocal, engine  # noqa: E402
@@ -25,8 +24,14 @@ def clean_database():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
-        db.add(AppSettings(id=1, accounting_start_date=date(2026, 1, 1)))
-        db.add(User(username="owner", password_hash=hash_password("correct horse battery staple")))
+        user = User(
+            username="owner",
+            password_hash=hash_password("correct horse battery staple"),
+            is_admin=True,
+        )
+        db.add(user)
+        db.flush()
+        db.add(AppSettings(id=1, user_id=user.id, accounting_start_date=date(2026, 1, 1)))
         db.commit()
     yield
 

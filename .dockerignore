@@ -1,6 +1,8 @@
 .git
 .gitignore
 .env
+.secrets
+.postgres-password
 **/.env
 **/.env.*
 .venv
@@ -26,5 +28,6 @@ backups
 **/*.sqlite3-wal
 **/*.sqlite3-shm
 **/*.sqlite3-journal
+**/*.dump
 lab2
 lab_photo

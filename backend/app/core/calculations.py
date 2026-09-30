@@ -27,6 +27,7 @@ from ..models import (
 )
 from .loans import PaymentRow, monthly_dates, project_loan
 from .salary_projection import projected_salary_payments
+from .tenant import settings_for_user
 
 MONTHLY_ESTIMATE_WINDOW = 3
 
@@ -202,7 +203,7 @@ def calculate_forecast(
     accounts = db.scalars(select(Account)).all()
     if not accounts:
         return {"from_month": from_month, "months": [], "warnings": ["no_accounts"]}
-    settings = db.get(AppSettings, 1)
+    settings = settings_for_user(db)
     current_month = app_current_month(settings, as_of)
     reserve_start_month = (
         month_key(settings.accounting_start_date)
@@ -225,7 +226,11 @@ def calculate_forecast(
         timeline.append(current)
         current = add_months(current, 1)
 
-    transaction_month = func.strftime("%Y-%m", Transaction.date).label("month")
+    transaction_month = (
+        func.to_char(Transaction.date, "YYYY-MM")
+        if db.bind.dialect.name == "postgresql"
+        else func.strftime("%Y-%m", Transaction.date)
+    ).label("month")
     transaction_rows = db.execute(
         select(
             transaction_month,
