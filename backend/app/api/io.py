@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import __version__
 from ..core.ru_payroll import SalaryRule as PayrollRule, salary_payouts
 from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
-from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, minor_digits
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, minor_digits, parse_display_rates
 from ..db import reserve_write_slot
 from ..models import (
     Account,
@@ -747,6 +747,7 @@ def validate_canonical_row(model, values: dict) -> None:
         raise ValueError(f"{model.__tablename__}.version must be positive")
 
     allowed_values = {
+        AppSettings: {"currency_display_mode": {"separate", "converted"}},
         Account: {"type": {"cash", "bank", "savings"}},
         Category: {"kind": {"income", "expense"}},
         Transaction: {"type": {"income", "expense", "refund", "adjustment"}},
@@ -769,6 +770,7 @@ def validate_canonical_row(model, values: dict) -> None:
     if model is AppSettings:
         if not re.fullmatch(r"[A-Z]{3}", values["currency"]):
             raise ValueError("invalid settings currency")
+        parse_display_rates(values["display_rates_json"], values["currency"])
     elif model is Category:
         if values["monthly_estimate"] and values["kind"] != "expense":
             raise ValueError("monthly estimate requires an expense category")
@@ -1051,7 +1053,7 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 6,
+            "schema_version": 7,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -1085,9 +1087,9 @@ def import_project(
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
             schema_version = manifest.get("schema_version")
-            if schema_version not in (1, 2, 3, 4, 5, 6):
+            if schema_version not in (1, 2, 3, 4, 5, 6, 7):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
-            models = EXPORT_MODELS if schema_version in (4, 5, 6) else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
+            models = EXPORT_MODELS if schema_version in (4, 5, 6, 7) else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
             expected = {f"{model.__tablename__}.csv" for model in models} | {"manifest.json"}
             if names != expected:
                 raise HTTPException(status_code=422, detail="Archive file list does not match schema")
@@ -1147,6 +1149,10 @@ def import_project(
                     for column in model.__table__.columns:
                         if column.name == "user_id":
                             values[column.name] = tenant_id(db)
+                        elif schema_version < 7 and model is AppSettings and column.name == "currency_display_mode":
+                            values[column.name] = "separate"
+                        elif schema_version < 7 and model is AppSettings and column.name == "display_rates_json":
+                            values[column.name] = "{}"
                         elif schema_version < 6 and column.name == "currency" and model in (Account, PlanItem):
                             values[column.name] = legacy_currency
                         elif schema_version < 6 and model is Transfer and column.name == "to_amount_minor":
@@ -1229,7 +1235,7 @@ def import_project(
                         payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 6, "created": created}
+            return {"schema_version": 7, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
     except (UnicodeError, ValueError, InvalidOperation, csv.Error, json.JSONDecodeError) as exc:

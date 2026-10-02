@@ -2,29 +2,45 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
-import { formatMoney } from '../lib/format'
 import { AccountsPage } from './Accounts'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals() })
 
-it('shows active and archived account balances in the overall total', async () => {
-  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-    items: [
-      { id: 1, name: 'Карта', type: 'bank', initial_balance_minor: 100_000, initial_balance_date: '2026-01-01', current_balance_minor: 120_000, archived: false },
-      { id: 2, name: 'Накопительный', type: 'savings', initial_balance_minor: 20_000, initial_balance_date: '2026-01-01', current_balance_minor: 50_000, archived: false },
-      { id: 3, name: 'Старый счёт', type: 'cash', initial_balance_minor: 10_000, initial_balance_date: '2026-01-01', current_balance_minor: 5_000, archived: true },
-    ],
-    total: 3,
-  }), { headers: { 'content-type': 'application/json' } }))
-  vi.stubGlobal('fetch', fetchMock)
+it('shows a manually converted estimate and keeps each account in its own currency', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/accounts?include_archived=true') return new Response(JSON.stringify({
+      currency_display_mode: 'converted', base_currency: 'RUB', items: [
+        { id: 1, name: 'Рубли', type: 'bank', currency: 'RUB', initial_balance_date: '2026-01-01', initial_balance_minor: 100_000, current_balance_minor: 100_000, archived: false },
+        { id: 2, name: 'Доллары', type: 'bank', currency: 'USD', initial_balance_date: '2026-01-01', initial_balance_minor: 10_000, current_balance_minor: 10_000, archived: false },
+      ], total: 2,
+    }), { headers: { 'content-type': 'application/json' } })
+    if (path === '/api/v1/accounts/converted-total') return new Response(JSON.stringify({
+      currency: 'RUB', total_minor: 900_000, rate_source: 'manual', indicative: true,
+    }), { headers: { 'content-type': 'application/json' } })
+    throw new Error(`Unexpected request: ${path}`)
+  }))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><MemoryRouter><AccountsPage/></MemoryRouter></QueryClientProvider>)
+  render(<MemoryRouter><QueryClientProvider client={client}><AccountsPage /></QueryClientProvider></MemoryRouter>)
+  expect(await screen.findByText('Ориентировочно всего')).toBeInTheDocument()
+  expect(screen.getByText(/9\s*000\s*₽/)).toBeInTheDocument()
+  expect(screen.getByText('Доллары')).toBeInTheDocument()
+  expect(screen.getAllByText(/100\s*\$/).length).toBeGreaterThan(0)
+})
 
-  expect(await screen.findByText('Старый счёт')).toBeInTheDocument()
-  expect(fetchMock).toHaveBeenCalledWith('/api/v1/accounts?include_archived=true', expect.objectContaining({ method: 'GET' }))
-  const matchesMoney = (amount: number) => (content: string) => content.replace(/\s/g, ' ') === formatMoney(amount).replace(/\s/g, ' ')
-  expect(screen.getByText(matchesMoney(175_000))).toBeInTheDocument()
-  expect(screen.getByText(matchesMoney(170_000))).toBeInTheDocument()
-  expect(screen.getByRole('link', { name: /Управлять счетами/ })).toHaveAttribute('href', '/settings?tab=accounts')
-  expect(screen.getByRole('link', { name: /Операции и переводы/ })).toHaveAttribute('href', '/transactions')
+it('points to rate settings when a required manual rate is missing', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/accounts?include_archived=true') return new Response(JSON.stringify({
+      currency_display_mode: 'converted', base_currency: 'RUB', items: [], total: 0,
+    }), { headers: { 'content-type': 'application/json' } })
+    if (path === '/api/v1/accounts/converted-total') return new Response(JSON.stringify({
+      detail: 'Задайте курсы в настройках: USD',
+    }), { status: 409, headers: { 'content-type': 'application/json' } })
+    throw new Error(`Unexpected request: ${path}`)
+  }))
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<MemoryRouter><QueryClientProvider client={client}><AccountsPage /></QueryClientProvider></MemoryRouter>)
+  expect(await screen.findByText(/Задайте курсы в настройках: USD/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Задать курсы' })).toHaveAttribute('href', '/settings?tab=currencies')
 })

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
@@ -71,3 +73,25 @@ def effective_rate(
     source_major = Decimal(source_minor) / (Decimal(10) ** minor_digits(source_currency))
     target_major = Decimal(target_minor) / (Decimal(10) ** minor_digits(target_currency))
     return positive_rate(target_major / source_major)
+
+
+def parse_display_rates(raw: str, base_currency: str) -> dict[str, Decimal]:
+    """Read manually saved target-per-source rates; never infer one from a quote."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Invalid saved display rates") from exc
+    if not isinstance(data, dict) or len(data) > len(SUPPORTED_CURRENCIES):
+        raise ValueError("Invalid saved display rates")
+    rates = {base_currency: Decimal(1)}
+    for source, entry in data.items():
+        if (
+            source not in SUPPORTED_CURRENCIES or source == base_currency
+            or not isinstance(entry, dict)
+            or not isinstance(entry.get("rate"), str)
+            or not isinstance(entry.get("updated_on"), str)
+        ):
+            raise ValueError("Invalid saved display rate entry")
+        date.fromisoformat(entry["updated_on"])
+        rates[source] = positive_rate(entry["rate"])
+    return rates

@@ -625,29 +625,33 @@
       "versionNonce": 130011,
       "seed": 130011,
       "opacity": 80,
-      "x": 427,
+      "x": 70,
       "y": -332,
-      "width": 13,
-      "height": 1152,
+      "width": 357,
+      "height": 1187,
       "points": [
         [
-          13,
-          1152
+          50,
+          1187
         ],
         [
-          13,
-          1132
+          50,
+          1167
         ],
         [
-          13,
-          0
+          0,
+          1167
         ],
         [
           0,
           0
         ],
         [
-          0,
+          357,
+          0
+        ],
+        [
+          357,
           532
         ]
       ]
@@ -677,15 +681,15 @@
       "x": 401,
       "y": -310,
       "width": 79,
-      "height": 1444,
+      "height": 1479,
       "points": [
         [
           79,
-          1444
+          1479
         ],
         [
           79,
-          1424
+          1459
         ],
         [
           79,
@@ -2488,8 +2492,8 @@
       "type": "rectangle",
       "x": 100,
       "y": 500,
-      "width": 310,
-      "height": 261,
+      "width": 350,
+      "height": 298,
       "strokeColor": "#1971c2",
       "backgroundColor": "#e3fafc",
       "fillStyle": "solid",
@@ -2497,23 +2501,23 @@
       "roundness": {
         "type": 3
       },
-      "version": 2
+      "version": 3
     },
     {
       "id": "txt-settings",
       "type": "text",
       "x": 118,
       "y": 517,
-      "text": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/UQ/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "text": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ncurrency_display_mode: varchar(16)\ndisplay_rates_json: text\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/UQ/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "originalText": "APP_SETTINGS\n────────────────\nPK  id: integer\ncurrency: varchar(3)\ncurrency_display_mode: varchar(16)\ndisplay_rates_json: text\ntimezone: varchar(64)\naccounting_start_date: date\nsalary_enabled: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "autoResize": false,
       "lineHeight": 1.25,
-      "width": 250,
-      "height": 227,
+      "width": 314,
+      "height": 264,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2526,7 +2530,7 @@
       "frameId": null,
       "roundness": null,
       "seed": 9104,
-      "version": 2,
+      "version": 3,
       "versionNonce": 9104,
       "isDeleted": false,
       "boundElements": null,
@@ -2539,7 +2543,7 @@
       "id": "tbl-import-batches",
       "type": "rectangle",
       "x": 100,
-      "y": 820,
+      "y": 855,
       "width": 360,
       "height": 279,
       "strokeColor": "#868e96",
@@ -2555,7 +2559,7 @@
       "id": "txt-import-batches",
       "type": "text",
       "x": 118,
-      "y": 837,
+      "y": 872,
       "text": "IMPORT_BATCHES\n──────────────────\nPK  id: integer\nfingerprint: varchar(64)\nimport_type: varchar(40)\nsettings_json: text\nrows_json: text\nstatus: varchar(20)\ncreated_count: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, fingerprint)\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
@@ -2591,7 +2595,7 @@
       "id": "tbl-idempotency-records",
       "type": "rectangle",
       "x": 100,
-      "y": 1134,
+      "y": 1169,
       "width": 400,
       "height": 242,
       "strokeColor": "#868e96",
@@ -2607,7 +2611,7 @@
       "id": "txt-idempotency-records",
       "type": "text",
       "x": 118,
-      "y": 1151,
+      "y": 1186,
       "text": "IDEMPOTENCY_RECORDS\n────────────────────\nPK  id: integer\nkey: varchar(160)\nrequest_hash: varchar(64)\nresponse_json: text\nstatus_code: integer\ncreated_at: datetime\nFK/IX  user_id: integer\nUQ(user_id, id)\nUQ(user_id, key)",
       "fontSize": 15,
       "fontFamily": 3,

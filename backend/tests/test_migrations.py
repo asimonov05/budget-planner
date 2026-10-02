@@ -67,23 +67,23 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
             ("owner", "hash", "2026-01-01 00:00:00"),
         )
 
-    (versions / "versions" / "0010_test.py").write_text(
-        "from alembic import op\n"
-        "import sqlalchemy as sa\n"
-        "revision = '0010_test'\n"
-        "down_revision = '0009'\n"
-        "branch_labels = None\n"
-        "depends_on = None\n"
-        "def upgrade():\n"
-        "    op.add_column('users', sa.Column('display_name', sa.String(80)))\n"
-        "def downgrade():\n"
-        "    op.drop_column('users', 'display_name')\n"
+    (versions / "versions" / "0011_test.py").write_text(
+            "from alembic import op\n"
+            "import sqlalchemy as sa\n"
+            "revision = '0011_test'\n"
+            "down_revision = '0010'\n"
+            "branch_labels = None\n"
+            "depends_on = None\n"
+            "def upgrade():\n"
+            "    op.add_column('users', sa.Column('display_name', sa.String(80)))\n"
+            "def downgrade():\n"
+            "    op.drop_column('users', 'display_name')\n"
     )
 
     command.upgrade(alembic, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0010_test",
+            "0011_test",
         )
         assert connection.execute("SELECT username, display_name FROM users").fetchone() == (
             "owner",

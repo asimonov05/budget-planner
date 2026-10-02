@@ -21,6 +21,7 @@ class VersionedUpdate(BaseModel):
 class SettingsOut(ORMModel):
     id: int
     currency: str
+    currency_display_mode: Literal["separate", "converted"]
     timezone: str
     accounting_start_date: DateType
     salary_enabled: bool
@@ -29,9 +30,15 @@ class SettingsOut(ORMModel):
 
 class SettingsUpdate(VersionedUpdate):
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    currency_display_mode: Literal["separate", "converted"] | None = None
     timezone: str | None = Field(None, min_length=1, max_length=64)
     accounting_start_date: DateType | None = None
     salary_enabled: bool | None = None
+
+
+class DisplayRateInput(BaseModel):
+    rate: str = Field(min_length=1, max_length=64)
+    version: int = Field(ge=1)
 
 
 class PrivateUserCreate(BaseModel):

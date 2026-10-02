@@ -88,10 +88,20 @@ class AppSettings(Base, TenantMixin, TimestampVersionMixin):
     __tablename__ = "app_settings"
     id: Mapped[int] = mapped_column(primary_key=True)
     currency: Mapped[str] = mapped_column(String(3), default="RUB")
+    currency_display_mode: Mapped[str] = mapped_column(
+        String(16), default="separate", server_default="separate"
+    )
+    display_rates_json: Mapped[str] = mapped_column(Text, default="{}", server_default="{}")
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Moscow")
     accounting_start_date: Mapped[date] = mapped_column(Date, default=date.today)
     salary_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    __table_args__ = (UniqueConstraint("user_id", name="uq_app_settings_user_id"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_app_settings_user_id"),
+        CheckConstraint(
+            "currency_display_mode IN ('separate', 'converted')",
+            name="ck_app_settings_currency_display_mode",
+        ),
+    )
 
 
 class Account(Base, TenantMixin, TimestampVersionMixin):

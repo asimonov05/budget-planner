@@ -72,8 +72,8 @@ from ..schemas import (
 )
 from ..security import get_db, require_csrf, require_user
 from ..core.tenant import budget_month_for_user, settings_for_user
-from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, effective_rate, positive_rate
-from ..infrastructure.cbr_rates import RateUnavailable, daily_rates
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, parse_display_rates, positive_rate
+from ..application.forecast_conversion import combine_forecasts
 
 
 router = APIRouter(tags=["finance"])
@@ -167,17 +167,17 @@ def ensure_transaction_account_date(account: Account, value: date) -> None:
         )
 
 
-def rate_for_entry(source: str, target: str, on_date: date, provided: str | None):
-    """Use the user's actual rate, otherwise an indicative CBR quote."""
+def rate_for_entry(source: str, target: str, _on_date: date, provided: str | None):
+    """Cross-currency movements require a rate chosen by the user."""
     try:
         if source == target:
             rate = positive_rate(provided or "1")
             if rate != 1:
                 raise ValueError("Same-currency rate must be 1")
             return rate
-        return positive_rate(provided or daily_rates(on_date).quote(source, target))
-    except RateUnavailable as exc:
-        raise HTTPException(status_code=422, detail="Укажите фактический курс вручную") from exc
+        if not provided:
+            raise ValueError("Укажите курс вручную")
+        return positive_rate(provided)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -202,14 +202,9 @@ def merchant_details(
             if rate != 1 or merchant_amount_minor != account_amount_minor:
                 raise ValueError("Для одной валюты сумма покупки должна совпадать со списанием")
         else:
-            rate = (
-                positive_rate(merchant_exchange_rate)
-                if merchant_exchange_rate
-                else effective_rate(
-                    merchant_amount_minor, merchant_currency,
-                    account_amount_minor, account_currency,
-                )
-            )
+            if not merchant_exchange_rate:
+                raise ValueError("Укажите курс вручную")
+            rate = positive_rate(merchant_exchange_rate)
             converted = convert_minor(
                 merchant_amount_minor, merchant_currency, account_currency, rate
             )
@@ -2093,6 +2088,45 @@ def forecast(
     if currency is not None and currency not in SUPPORTED_CURRENCIES:
         raise HTTPException(status_code=422, detail="Unsupported currency")
     return calculate_forecast(db, from_month, months, include_possible, currency=currency)
+
+
+@router.get("/forecast/converted")
+def converted_forecast(
+    from_month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    months: int = Query(12, ge=1, le=120),
+    include_possible: bool = False,
+    _=Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    currencies = {base_currency}
+    currencies.update(db.scalars(select(Account.currency).distinct()).all())
+    currencies.update(db.scalars(select(PlanItem.currency).distinct()).all())
+    rates = parse_display_rates(settings.display_rates_json if settings else "{}", base_currency)
+    missing_rates = sorted(currencies - set(rates))
+    if missing_rates:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Задайте курсы в настройках: {', '.join(missing_rates)}",
+        )
+    forecasts = {
+        currency: calculate_forecast(db, from_month, months, include_possible, currency=currency)
+        for currency in sorted(currencies)
+    }
+    warnings = set().union(*(forecast["warnings"] for forecast in forecasts.values()))
+    if any(forecast["months"] for forecast in forecasts.values()):
+        warnings.discard("no_accounts")
+    return {
+        "from_month": from_month,
+        "currency": base_currency,
+        "mode": "converted",
+        "indicative": True,
+        "rate_source": "manual",
+        "rates": {currency: format(rates[currency], "f") for currency in currencies},
+        "months": combine_forecasts(forecasts, base_currency, rates),
+        "warnings": sorted(warnings),
+    }
 
 
 @router.get("/reports/monthly")

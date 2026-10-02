@@ -31,3 +31,30 @@ it('shows the estimated part of monthly category spending in the annual plan', a
   expect(estimate.closest('tr')).toHaveTextContent('15 000 ₽')
   expect(screen.getByText('Свободно на конец').closest('tr')).toHaveTextContent('70 000 ₽')
 })
+
+it('loads the combined forecast when that display mode is selected in settings', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/v1/accounts?include_archived=true') return new Response(JSON.stringify({
+      items: [{ id: 1, name: 'Рубли', currency: 'RUB' }, { id: 2, name: 'Доллары', currency: 'USD' }],
+      base_currency: 'RUB', currency_display_mode: 'converted', total: 2,
+    }), { headers: { 'content-type': 'application/json' } })
+    if (path.startsWith('/api/v1/forecast/converted?')) return new Response(JSON.stringify({
+      currency: 'RUB', mode: 'converted', rate_source: 'manual', months: [{
+        month: '2026-10', income: 0, expense: 8_000_00, estimated_expense_minor: 0,
+        goal_allocations: 0, c_end: 92_000_00, r_end: 0, f_end: 92_000_00,
+        incomplete: false, category_details: [],
+      }],
+    }), { headers: { 'content-type': 'application/json' } })
+    if (path.startsWith('/api/v1/forecast?')) return new Response(JSON.stringify({ months: [] }), { headers: { 'content-type': 'application/json' } })
+    if (path === '/api/v1/categories?include_archived=true' || path === '/api/v1/currencies') return new Response(JSON.stringify({ items: [] }), { headers: { 'content-type': 'application/json' } })
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><PlanPage /></QueryClientProvider>)
+  expect(await screen.findByText(/Пересчёт выполнен по вручную заданным курсам/)).toBeInTheDocument()
+  expect(screen.getByRole('option', { name: 'Все валюты → RUB (оценка)' })).toBeInTheDocument()
+  expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/v1/forecast/converted?'))).toBe(true)
+  expect(screen.getByText('Все расходы').closest('tr')).toHaveTextContent('8 000 ₽')
+})

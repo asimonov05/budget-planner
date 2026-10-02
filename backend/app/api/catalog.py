@@ -32,13 +32,14 @@ from ..schemas import (
     CategoryUpdate,
     SettingsOut,
     SettingsUpdate,
+    DisplayRateInput,
     TagCreate,
     TagOut,
     TagUpdate,
 )
 from ..security import get_db, require_csrf, require_user
 from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
-from ..application.currency import SUPPORTED_CURRENCIES
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, parse_display_rates, positive_rate
 
 
 router = APIRouter(tags=["catalog"])
@@ -90,6 +91,79 @@ def get_settings(_=Depends(require_user), db: Session = Depends(get_db)) -> AppS
     return value
 
 
+@router.get("/currencies/display-rates")
+def list_display_rates(_=Depends(require_user), db: Session = Depends(get_db)) -> dict:
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    saved = json.loads(settings.display_rates_json if settings else "{}")
+    used = set(db.scalars(select(Account.currency).distinct()).all())
+    used.update(db.scalars(select(PlanItem.currency).distinct()).all())
+    currencies = (used | set(saved)) - {base_currency}
+    return {
+        "base_currency": base_currency,
+        "version": settings.version if settings else None,
+        "items": [
+            {
+                "from_currency": currency,
+                "to_currency": base_currency,
+                "rate": saved.get(currency, {}).get("rate"),
+                "updated_on": saved.get(currency, {}).get("updated_on"),
+                "required": currency in used,
+            }
+            for currency in sorted(currencies)
+        ],
+    }
+
+
+@router.put("/currencies/display-rates/{from_currency}")
+def save_display_rate(
+    from_currency: str,
+    body: DisplayRateInput,
+    _=Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> dict:
+    settings = settings_for_user(db)
+    if not settings:
+        missing("Settings")
+    ensure_version(settings, body.version)
+    if from_currency not in SUPPORTED_CURRENCIES or from_currency == settings.currency:
+        raise HTTPException(status_code=422, detail="Выберите другую поддерживаемую валюту")
+    try:
+        rate = positive_rate(body.rate.replace(",", "."))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    saved = json.loads(settings.display_rates_json)
+    saved[from_currency] = {
+        "rate": format(rate, "f"),
+        "updated_on": datetime.now(ZoneInfo("Europe/Moscow")).date().isoformat(),
+    }
+    settings.display_rates_json = json.dumps(saved, ensure_ascii=False, sort_keys=True)
+    settings.version += 1
+    db.commit()
+    return {"from_currency": from_currency, "to_currency": settings.currency, **saved[from_currency], "version": settings.version}
+
+
+@router.delete("/currencies/display-rates/{from_currency}", status_code=204)
+def delete_display_rate(
+    from_currency: str,
+    version: int = Query(ge=1),
+    _=Depends(require_csrf),
+    db: Session = Depends(get_db),
+) -> Response:
+    settings = settings_for_user(db)
+    if not settings:
+        missing("Settings")
+    ensure_version(settings, version)
+    saved = json.loads(settings.display_rates_json)
+    if from_currency not in saved:
+        missing("Display rate")
+    del saved[from_currency]
+    settings.display_rates_json = json.dumps(saved, ensure_ascii=False, sort_keys=True)
+    settings.version += 1
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.patch("/settings", response_model=SettingsOut)
 def update_settings(
     body: SettingsUpdate, _=Depends(require_csrf), db: Session = Depends(get_db)
@@ -110,6 +184,10 @@ def update_settings(
             raise HTTPException(
                 status_code=409, detail="Currency cannot be renamed after financial data exists"
             )
+        if data["currency"] != value.currency:
+            value.display_rates_json = "{}"
+    if "currency_display_mode" in data and data["currency_display_mode"] is None:
+        raise HTTPException(status_code=422, detail="Currency display mode is required")
     if (
         "accounting_start_date" in data
         and has_financial_data
@@ -177,7 +255,45 @@ def list_accounts(
         item = AccountOut.model_validate(account).model_dump()
         item["current_balance_minor"] = account_balance(db, account, as_of)
         items.append(item)
-    return {"items": items, "total": len(items), "base_currency": base_currency}
+    return {
+        "items": items,
+        "total": len(items),
+        "base_currency": base_currency,
+        "currency_display_mode": settings.currency_display_mode if settings else "separate",
+    }
+
+
+@router.get("/accounts/converted-total")
+def converted_account_total(_=Depends(require_user), db: Session = Depends(get_db)) -> dict:
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    try:
+        zone = ZoneInfo(settings.timezone if settings else "Europe/Moscow")
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = ZoneInfo("Europe/Moscow")
+    as_of = datetime.now(zone).date()
+    totals: dict[str, int] = {}
+    for account in db.scalars(select(Account)).all():
+        totals[account.currency] = totals.get(account.currency, 0) + account_balance(db, account, as_of)
+    rates = parse_display_rates(settings.display_rates_json if settings else "{}", base_currency)
+    missing_rates = sorted(set(totals) - set(rates))
+    if missing_rates:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Задайте курсы в настройках: {', '.join(missing_rates)}",
+        )
+    total_minor = sum(
+        convert_minor(amount, currency, base_currency, rates[currency])
+        for currency, amount in totals.items()
+    )
+    return {
+        "currency": base_currency, "total_minor": total_minor,
+        "as_of": as_of.isoformat(),
+        "rate_source": "manual",
+        "indicative": True,
+        "totals_minor": totals,
+        "rates": {currency: format(rates[currency], "f") for currency in totals},
+    }
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=201)

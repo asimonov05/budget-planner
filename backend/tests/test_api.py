@@ -557,8 +557,20 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     db.add(PlanOverride(plan_item_id=plan.id, month="2026-03", amount_minor=0))
     db.commit()
 
+    settings = client.get("/api/v1/settings").json()
+    display = client.patch("/api/v1/settings", headers=auth, json={
+        "currency_display_mode": "converted", "version": settings["version"],
+    })
+    assert display.status_code == 200, display.text
+    rates = client.get("/api/v1/currencies/display-rates").json()
+    saved = client.put("/api/v1/currencies/display-rates/USD", headers=auth, json={
+        "rate": "80", "version": rates["version"],
+    })
+    assert saved.status_code == 200, saved.text
+
     before = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2}).json()
     before_usd = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2, "currency": "USD"}).json()
+    before_converted = client.get("/api/v1/forecast/converted", params={"from_month": "2026-02", "months": 2}).json()
     exported = client.get("/api/v1/exports/project")
     assert exported.status_code == 200
     expected_counts = {
@@ -588,6 +600,8 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     after = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2}).json()
     assert after == before
     assert client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2, "currency": "USD"}).json() == before_usd
+    assert client.get("/api/v1/forecast/converted", params={"from_month": "2026-02", "months": 2}).json() == before_converted
+    assert client.get("/api/v1/settings").json()["currency_display_mode"] == "converted"
     assert db.scalar(select(Transfer).where(Transfer.exchange_rate == Decimal("0.0125"))).to_amount_minor == 100_00
     assert db.scalar(select(Transaction).where(Transaction.merchant_currency == "EUR")).merchant_amount_minor == 10_00
 
@@ -693,7 +707,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 6
+    assert imported.json()["schema_version"] == 7
     db.expire_all()
     restored_loan = db.scalar(select(Loan))
     restored_payment = db.scalar(
@@ -743,9 +757,48 @@ def test_version_2_project_archive_defaults_monthly_category_estimate(client, au
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 6
+    assert imported.json()["schema_version"] == 7
     db.expire_all()
     assert db.scalar(select(Category).where(Category.name == "Продукты")).monthly_estimate is False
+
+
+def test_version_6_project_archive_defaults_to_separate_currency_display(client, auth, account, db):
+    settings = client.get("/api/v1/settings").json()
+    assert settings["currency_display_mode"] == "separate"
+    exported = client.get("/api/v1/exports/project")
+    assert exported.status_code == 200
+    legacy = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(exported.content)) as source,
+        zipfile.ZipFile(legacy, "w") as destination,
+    ):
+        for name in source.namelist():
+            if name == "manifest.json":
+                manifest = json.loads(source.read(name))
+                manifest["schema_version"] = 6
+                destination.writestr(name, json.dumps(manifest))
+            elif name == "app_settings.csv":
+                reader = csv.DictReader(io.StringIO(source.read(name).decode("utf-8")))
+                fields = [field for field in reader.fieldnames or [] if field not in ("currency_display_mode", "display_rates_json")]
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows({field: row[field] for field in fields} for row in reader)
+                destination.writestr(name, output.getvalue())
+            else:
+                destination.writestr(name, source.read(name))
+    for model in reversed(EXPORT_MODELS):
+        db.execute(delete(model))
+    db.commit()
+    imported = client.post(
+        "/api/v1/imports/project",
+        files={"file": ("version6.zip", legacy.getvalue(), "application/zip")},
+        headers=auth,
+    )
+    assert imported.status_code == 200, imported.text
+    restored = client.get("/api/v1/settings").json()
+    assert restored["currency_display_mode"] == "separate"
+    assert client.get("/api/v1/currencies/display-rates").json()["items"] == []
 
 
 def test_project_import_rejects_traversal(client, auth):
