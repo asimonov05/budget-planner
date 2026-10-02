@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from .. import __version__
 from ..core.ru_payroll import SalaryRule as PayrollRule, salary_payouts
-from ..core.tenant import budget_month_for_user, tenant_id
+from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, minor_digits
 from ..db import reserve_write_slot
 from ..models import (
     Account,
@@ -77,7 +78,7 @@ def decode_csv(data: bytes, encoding: str | None) -> tuple[str, str]:
     raise HTTPException(status_code=422, detail="CSV encoding is not UTF-8/BOM or Windows-1251")
 
 
-def parse_amount(value: str) -> int:
+def parse_amount(value: str, currency: str = "RUB") -> int:
     clean = value.strip().replace("\u00a0", "").replace(" ", "")
     if "," in clean and "." in clean:
         # Last separator is decimal; the other is grouping.
@@ -86,9 +87,20 @@ def parse_amount(value: str) -> int:
     else:
         clean = clean.replace(",", ".")
     try:
-        return int((Decimal(clean) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        return int(
+            (Decimal(clean) * (10 ** minor_digits(currency))).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
     except (InvalidOperation, ValueError):
         raise ValueError("invalid monetary amount")
+
+
+def decimal_amount(value: int, currency: str) -> str:
+    digits = minor_digits(currency)
+    major, minor = divmod(abs(value), 10 ** digits)
+    fraction = f",{minor:0{digits}d}" if digits else ""
+    return f"{'-' if value < 0 else ''}{major}{fraction}"
 
 
 def validate_amount(value: int, *, allow_zero: bool = False, allow_negative: bool = False) -> None:
@@ -161,7 +173,11 @@ def preview_import(
     if any(len(field or "") > 120 for field in reader.fieldnames):
         raise HTTPException(status_code=422, detail="CSV column name is too long")
     rows, errors = [], []
-    account_names = {x.name: x.id for x in db.scalars(select(Account)).all()}
+    accounts = db.scalars(select(Account)).all()
+    account_names = {x.name: x.id for x in accounts}
+    accounts_by_id = {x.id: x for x in accounts}
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
     category_names = {x.name: x.id for x in db.scalars(select(Category)).all()}
     tag_names = {x.name for x in db.scalars(select(Tag)).all()}
     loan_names = {x.name: x.id for x in db.scalars(select(Loan)).all()}
@@ -203,9 +219,14 @@ def preview_import(
                     if account_value.isdigit()
                     else account_names.get(account_value)
                 )
+                account = accounts_by_id.get(account_id)
+                currency = (raw.get("currency") or (account.currency if account else base_currency)).strip()
+                if currency not in SUPPORTED_CURRENCIES or (account and currency != account.currency):
+                    raise ValueError("currency does not match account")
                 normalized = {
                     "date": parse_date(raw.get("date", ""), date_format).isoformat(),
-                    "amount_minor": parse_amount(raw.get("amount", "")),
+                    "amount_minor": parse_amount(raw.get("amount", ""), currency),
+                    "currency": currency,
                     "type": (raw.get("type") or "").strip().lower(),
                     "account_id": account_id,
                     "account": account_value,
@@ -225,7 +246,7 @@ def preview_import(
                     raise ValueError("invalid type")
                 if not account_id:
                     raise ValueError("unknown or missing account")
-                if not db.get(Account, account_id):
+                if not account:
                     raise ValueError("unknown or missing account")
                 validate_amount(
                     normalized["amount_minor"],
@@ -282,10 +303,16 @@ def preview_import(
                     raise ValueError("principal and interest exceed payment amount")
             elif import_type == "plan_items":
                 category_name = (raw.get("category") or "").strip() or None
+                plan_account_id = int(raw["account_id"]) if raw.get("account_id") else None
+                plan_account = accounts_by_id.get(plan_account_id)
+                plan_currency = (raw.get("currency") or (plan_account.currency if plan_account else base_currency)).strip()
+                if plan_currency not in SUPPORTED_CURRENCIES or (plan_account and plan_currency != plan_account.currency):
+                    raise ValueError("currency does not match account")
                 normalized = {
                     "kind": raw["kind"].strip(),
                     "title": raw["title"].strip(),
-                    "amount_minor": parse_amount(raw["amount"]),
+                    "amount_minor": parse_amount(raw["amount"], plan_currency),
+                    "currency": plan_currency,
                     "date": parse_date(raw["date"], date_format).isoformat()
                     if raw.get("date")
                     else None,
@@ -300,7 +327,7 @@ def preview_import(
                     "certainty": raw.get("certainty") or "confirmed",
                     "category": category_name,
                     "category_id": category_names.get(category_name) if category_name else None,
-                    "account_id": int(raw["account_id"]) if raw.get("account_id") else None,
+                    "account_id": plan_account_id,
                 }
                 validate_amount(normalized["amount_minor"], allow_zero=True)
                 if not normalized["title"] or len(normalized["title"]) > 200:
@@ -417,6 +444,8 @@ def confirm_import(
             account = db.get(Account, row["account_id"])
             if not account:
                 raise HTTPException(status_code=409, detail="Import account no longer exists")
+            if account.currency != row.get("currency", account.currency):
+                raise HTTPException(status_code=409, detail="Import account currency changed")
             if transaction_date < account.initial_balance_date:
                 raise HTTPException(
                     status_code=422,
@@ -527,6 +556,7 @@ def confirm_import(
                     kind=row["kind"],
                     title=row["title"],
                     amount_minor=row["amount_minor"],
+                    currency=row.get("currency", "RUB"),
                     date=date.fromisoformat(row["date"]) if row.get("date") else None,
                     month=row.get("month"),
                     recurrence=row["recurrence"],
@@ -556,7 +586,7 @@ def export_transactions(
         raise HTTPException(status_code=422, detail="Unsupported delimiter")
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=delimiter)
-    account_names = {item.id: item.name for item in db.scalars(select(Account)).all()}
+    accounts = {item.id: item for item in db.scalars(select(Account)).all()}
     category_names = {item.id: item.name for item in db.scalars(select(Category)).all()}
     type_labels = {
         "income": "Доход",
@@ -568,6 +598,10 @@ def export_transactions(
         [
             "Дата",
             "Сумма",
+            "Валюта",
+            "Сумма покупки",
+            "Валюта покупки",
+            "Курс оплаты",
             "Тип",
             "Счёт",
             "Категория",
@@ -578,14 +612,20 @@ def export_transactions(
         ]
     )
     for tx in db.scalars(select(Transaction).order_by(Transaction.date, Transaction.id)).all():
-        major, minor = divmod(abs(tx.amount_minor), 100)
-        amount = f"{'-' if tx.amount_minor < 0 else ''}{major},{minor:02d}"
+        account = accounts.get(tx.account_id)
+        currency = account.currency if account else "RUB"
+        amount = decimal_amount(tx.amount_minor, currency)
         writer.writerow(
             [
                 tx.date.isoformat(),
                 amount,
+                currency,
+                decimal_amount(tx.merchant_amount_minor, tx.merchant_currency)
+                if tx.merchant_amount_minor is not None and tx.merchant_currency else "",
+                tx.merchant_currency or "",
+                str(tx.merchant_exchange_rate) if tx.merchant_exchange_rate is not None else "",
                 type_labels[tx.type],
-                safe_excel(account_names.get(tx.account_id, "")),
+                safe_excel(account.name if account else ""),
                 safe_excel(category_names.get(tx.category_id, "")),
                 "|".join(safe_excel(x.name) for x in tx.tags),
                 safe_excel(tx.description),
@@ -685,6 +725,11 @@ def canonical_value(column, raw: str | None):
         return lowered in ("1", "true")
     if python_type is int:
         return int(raw)
+    if python_type is Decimal:
+        value = Decimal(raw)
+        if not value.is_finite():
+            raise ValueError(f"invalid exchange rate for {column.name}")
+        return value
     return raw
 
 
@@ -858,9 +903,30 @@ def validate_canonical_relationships(db: Session) -> None:
         account = db.get(Account, transaction.account_id)
         if not account or transaction.date < account.initial_balance_date:
             raise ValueError("transaction predates or references a missing account")
+        if account.currency not in SUPPORTED_CURRENCIES:
+            raise ValueError("transaction account currency is unsupported")
+        if transaction.merchant_currency is not None:
+            if transaction.merchant_amount_minor is None or transaction.merchant_exchange_rate is None:
+                raise ValueError("cross-currency payment lacks amount or rate")
+            payment_debit = convert_minor(
+                transaction.merchant_amount_minor,
+                transaction.merchant_currency,
+                account.currency,
+                transaction.merchant_exchange_rate,
+            )
+            if abs(payment_debit - transaction.amount_minor) > 1:
+                raise ValueError("cross-currency payment rate does not match account debit")
+        elif transaction.merchant_amount_minor is not None or transaction.merchant_exchange_rate is not None:
+            raise ValueError("payment conversion is incomplete")
         if transaction.loan_id is not None and not db.get(Loan, transaction.loan_id):
             raise ValueError("transaction references a missing loan")
     for plan in db.scalars(select(PlanItem)).all():
+        if plan.currency not in SUPPORTED_CURRENCIES:
+            raise ValueError("plan currency is unsupported")
+        if plan.account_id is not None:
+            account = db.get(Account, plan.account_id)
+            if not account or account.currency != plan.currency:
+                raise ValueError("plan currency does not match account")
         if plan.loan_id is not None and not db.get(Loan, plan.loan_id):
             raise ValueError("plan item references a missing loan")
     for transfer in db.scalars(select(Transfer)).all():
@@ -873,6 +939,13 @@ def validate_canonical_relationships(db: Session) -> None:
             or transfer.date < target.initial_balance_date
         ):
             raise ValueError("transfer predates or references a missing account")
+        if convert_minor(
+            transfer.amount_minor,
+            source.currency,
+            target.currency,
+            transfer.exchange_rate,
+        ) != transfer.to_amount_minor:
+            raise ValueError("transfer amount and exchange rate disagree")
     for match in db.scalars(select(PlanMatch)).all():
         plan = db.get(PlanItem, match.plan_item_id)
         transaction = db.get(Transaction, match.transaction_id)
@@ -882,6 +955,7 @@ def validate_canonical_relationships(db: Session) -> None:
             or not transaction
             or transaction.type != expected_type
             or match.amount_minor > transaction.amount_minor
+            or (db.get(Account, transaction.account_id).currency != plan.currency)
             or (
                 transaction.external_source
                 and transaction.external_source.startswith("loan_schedule:")
@@ -977,7 +1051,7 @@ def export_project(_=Depends(require_user), db: Session = Depends(get_db)) -> St
             writer.writerows(rows)
             archive.writestr(name, output.getvalue())
         manifest = {
-            "schema_version": 5,
+            "schema_version": 6,
             "app_version": __version__,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -1011,9 +1085,9 @@ def import_project(
                 raise HTTPException(status_code=413, detail="Expanded archive is too large")
             manifest = json.loads(archive.read("manifest.json"))
             schema_version = manifest.get("schema_version")
-            if schema_version not in (1, 2, 3, 4, 5):
+            if schema_version not in (1, 2, 3, 4, 5, 6):
                 raise HTTPException(status_code=422, detail="Unsupported schema version")
-            models = EXPORT_MODELS if schema_version in (4, 5) else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
+            models = EXPORT_MODELS if schema_version in (4, 5, 6) else [model for model in EXPORT_MODELS if model not in (SalaryRule, SalaryMatch)]
             expected = {f"{model.__tablename__}.csv" for model in models} | {"manifest.json"}
             if names != expected:
                 raise HTTPException(status_code=422, detail="Archive file list does not match schema")
@@ -1047,6 +1121,16 @@ def import_project(
                 if schema_version == 3
                 else {}
             )
+            legacy_currency = "RUB"
+            if schema_version < 6:
+                settings_reader = csv.DictReader(
+                    io.StringIO(archive.read("app_settings.csv").decode("utf-8"))
+                )
+                settings_row = next(settings_reader, None)
+                if settings_row and settings_row.get("currency"):
+                    legacy_currency = settings_row["currency"]
+                if legacy_currency not in SUPPORTED_CURRENCIES:
+                    raise ValueError("Unsupported base currency in legacy archive")
             parsed: dict[type, list[dict]] = {}
             for model in EXPORT_MODELS:
                 name = f"{model.__tablename__}.csv"
@@ -1063,6 +1147,16 @@ def import_project(
                     for column in model.__table__.columns:
                         if column.name == "user_id":
                             values[column.name] = tenant_id(db)
+                        elif schema_version < 6 and column.name == "currency" and model in (Account, PlanItem):
+                            values[column.name] = legacy_currency
+                        elif schema_version < 6 and model is Transfer and column.name == "to_amount_minor":
+                            values[column.name] = int(raw["amount_minor"])
+                        elif schema_version < 6 and model is Transfer and column.name == "exchange_rate":
+                            values[column.name] = Decimal(1)
+                        elif schema_version < 6 and model is Transaction and column.name in (
+                            "merchant_currency", "merchant_amount_minor", "merchant_exchange_rate"
+                        ):
+                            values[column.name] = None
                         elif column.name not in raw and column.name in legacy_columns.get(model, {}):
                             values[column.name] = legacy_columns[model][column.name]
                         else:
@@ -1135,8 +1229,8 @@ def import_project(
                         payment.loan_id = item.loan_id
             validate_canonical_relationships(db)
             db.commit()
-            return {"schema_version": 5, "created": created}
+            return {"schema_version": 6, "created": created}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=422, detail="Invalid ZIP archive") from exc
-    except (UnicodeError, ValueError, csv.Error, json.JSONDecodeError) as exc:
+    except (UnicodeError, ValueError, InvalidOperation, csv.Error, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail=f"Invalid canonical archive: {exc}") from exc

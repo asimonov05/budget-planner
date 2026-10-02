@@ -312,7 +312,7 @@ def test_project_archive_preserves_auto_loan_and_payment_links(client, auth, acc
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 5
+    assert imported.json()["schema_version"] == 6
     db.expire_all()
     restored_loan = db.get(Loan, loan["id"])
     restored_plan = db.get(PlanItem, plan["id"])

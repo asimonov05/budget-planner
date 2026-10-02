@@ -23,6 +23,7 @@ from .db import SessionLocal, verify_database
 from .models import SessionToken, User
 from .presentation import reset_budget
 from .presentation import registration
+from .presentation import currencies
 from .security import hash_token
 from .errors import (
     http_error,
@@ -103,6 +104,7 @@ def ready() -> dict:
 
 api.include_router(auth.router)
 api.include_router(registration.router)
+api.include_router(currencies.router)
 api.include_router(catalog.router)
 api.include_router(finance.router)
 api.include_router(salary.router)

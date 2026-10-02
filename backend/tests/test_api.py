@@ -5,6 +5,7 @@ import io
 import json
 import zipfile
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 
@@ -454,7 +455,7 @@ def test_formula_safe_csv_export(client, auth, account, db):
     db.commit()
     response = client.get("/api/v1/exports/transactions.csv")
     assert response.status_code == 200
-    assert "Дата;Сумма;Тип;Счёт;Категория" in response.text
+    assert "Дата;Сумма;Валюта;Сумма покупки;Валюта покупки;Курс оплаты;Тип;Счёт;Категория" in response.text
     assert "Основной" in response.text
     assert "'=CMD()" in response.text
 
@@ -487,10 +488,14 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
         initial_balance_minor=50_000_00,
         initial_balance_date=date(2026, 1, 1),
     )
+    dollars = Account(
+        name="Доллары", type="bank", currency="USD",
+        initial_balance_minor=0, initial_balance_date=date(2026, 1, 1),
+    )
     category = Category(name="Путешествия", kind="expense", monthly_estimate=True)
     tag = Tag(name="отпуск-2027")
     goal = Goal(name="Отпуск", target_amount_minor=150_000_00, initial_reserved_minor=30_000_00)
-    db.add_all([savings, category, tag, goal])
+    db.add_all([savings, dollars, category, tag, goal])
     db.flush()
     transaction = Transaction(
         type="expense",
@@ -528,6 +533,23 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
                 amount_minor=10_000_00,
                 date=date(2026, 2, 1),
             ),
+            Transfer(
+                from_account_id=account.id, to_account_id=dollars.id,
+                amount_minor=8_000_00, to_amount_minor=100_00,
+                exchange_rate=Decimal("0.0125"), date=date(2026, 2, 2),
+            ),
+            Transaction(
+                type="expense", amount_minor=11_00,
+                merchant_currency="EUR", merchant_amount_minor=10_00,
+                merchant_exchange_rate=Decimal("1.1"),
+                date=date(2026, 2, 10), account_id=dollars.id,
+                description="Покупка в евро",
+            ),
+            PlanItem(
+                kind="expense", title="Подписка в долларах",
+                amount_minor=5_00, currency="USD", month="2026-03",
+                account_id=dollars.id,
+            ),
             BudgetLimit(category_id=category.id, amount_minor=15_000_00, start_month="2026-01"),
         ]
     )
@@ -536,6 +558,7 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     db.commit()
 
     before = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2}).json()
+    before_usd = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2, "currency": "USD"}).json()
     exported = client.get("/api/v1/exports/project")
     assert exported.status_code == 200
     expected_counts = {
@@ -564,6 +587,9 @@ def test_project_export_import_round_trip_preserves_links_and_totals(client, aut
     assert db.scalar(select(func.count()).select_from(PlanItemTag)) == 1
     after = client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2}).json()
     assert after == before
+    assert client.get("/api/v1/forecast", params={"from_month": "2026-02", "months": 2, "currency": "USD"}).json() == before_usd
+    assert db.scalar(select(Transfer).where(Transfer.exchange_rate == Decimal("0.0125"))).to_amount_minor == 100_00
+    assert db.scalar(select(Transaction).where(Transaction.merchant_currency == "EUR")).merchant_amount_minor == 10_00
 
 
 def test_project_import_preserves_historical_opening_deficit(client, auth, account, db):
@@ -667,7 +693,7 @@ def test_legacy_project_archive_restores_loan_payment_links(client, auth, accoun
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 5
+    assert imported.json()["schema_version"] == 6
     db.expire_all()
     restored_loan = db.scalar(select(Loan))
     restored_payment = db.scalar(
@@ -717,7 +743,7 @@ def test_version_2_project_archive_defaults_monthly_category_estimate(client, au
         headers=auth,
     )
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 5
+    assert imported.json()["schema_version"] == 6
     db.expire_all()
     assert db.scalar(select(Category).where(Category.name == "Продукты")).monthly_estimate is False
 

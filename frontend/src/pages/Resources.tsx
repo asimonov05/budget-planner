@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,14 +6,16 @@ import { z } from 'zod'
 import { Archive, ArrowRight, Ban, CalendarPlus, CirclePlus, Link2, Pencil, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { ApiError, api, asList, jsonBody, queryString } from '../lib/api'
 import { dateLabel, formatMoney, parseMoney } from '../lib/format'
+import { convertMinor, moneyInput, type FxQuote } from '../lib/currency'
 import type { Account, Category, ID, ListResponse, Loan, LoanScheduleItem, Tag, Transaction, Transfer } from '../lib/types'
 import { Badge, Button, ErrorState, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { AutoLoanProjection } from '../components/AutoLoanProjection'
 import { SalaryIncomeSummary } from '../components/SalaryIncomeSummary'
+import { CurrencySelect } from '../components/CurrencySelect'
 
 type ResourceType = 'income' | 'payment' | 'transaction' | 'loan'
 interface PlanItem {
-  id: ID; kind: 'income' | 'expense'; title: string; amount_minor: number; date?: string; month?: string;
+  id: ID; kind: 'income' | 'expense'; title: string; amount_minor: number; currency?: string; date?: string; month?: string;
   start_date?: string; recurrence: string; certainty: string; status: string; account_id?: ID;
   category_id?: ID; loan_id?: ID | null; tags?: Tag[]; comment?: string; end_date?: string; version?: number
 }
@@ -34,6 +36,7 @@ const baseSchema = z.object({
   principal_as_of: z.string().optional(), start_date: z.string().optional(), end_date: z.string().optional(), tag_ids: z.array(z.string()).optional(),
   loan_id: z.string().optional(), annual_rate_percent: z.string().optional(), interest_method: z.string().optional(),
   schedule_mode: z.string().optional(), first_payment_date: z.string().optional(), prepayment_strategy: z.string().optional(),
+  payment_currency: z.string().optional(), plan_currency: z.string().optional(), exchange_rate: z.string().optional(),
 })
 type FormValues = z.infer<typeof baseSchema>
 interface ResourceSubmission { values: FormValues; idempotencyKey: string; item?: EditableItem }
@@ -44,7 +47,6 @@ function newIdempotencyKey(scope: string) {
 }
 
 function numericIds(values?: string[]) { return (values ?? []).map(Number) }
-function moneyInput(valueMinor: number) { return (valueMinor / 100).toFixed(2).replace('.', ',') }
 function rateInput(bps?: number | null) { return bps == null ? '' : (bps / 100).toString().replace('.', ',') }
 function parseRateBps(value?: string) {
   if (!value?.trim()) return null
@@ -66,13 +68,21 @@ function localDate() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 }
 
-function schemaFor(type: ResourceType) {
+function schemaFor(type: ResourceType, accounts: Account[]) {
   return baseSchema.superRefine((values, context) => {
     const isTransfer = type === 'transaction' && values.transaction_type === 'transfer'
+    const sourceAccount = accounts.find((account) => String(account.id) === values.account_id)
+    const targetAccount = accounts.find((account) => String(account.id) === values.to_account_id)
+    const sourceCurrency = isTransfer ? sourceAccount?.currency ?? 'RUB' :
+      type === 'transaction' && (values.transaction_type === 'expense' || values.transaction_type === 'refund')
+        ? values.payment_currency || sourceAccount?.currency || 'RUB'
+        : type === 'income' || type === 'payment'
+          ? values.plan_currency || sourceAccount?.currency || 'RUB'
+          : sourceAccount?.currency || 'RUB'
     if (!isTransfer && !values.title?.trim()) context.addIssue({ code: z.ZodIssueCode.custom, path: ['title'], message: 'Укажите название' })
     if (type !== 'loan') {
       try {
-        const amount = values.amount ? parseMoney(values.amount) : 0
+        const amount = values.amount ? parseMoney(values.amount, sourceCurrency) : 0
         const signedAdjustment = type === 'transaction' && values.transaction_type === 'adjustment'
         if (signedAdjustment ? amount === 0 : amount <= 0) throw new Error()
       } catch {
@@ -97,6 +107,19 @@ function schemaFor(type: ResourceType) {
       if (isTransfer && !values.to_account_id) context.addIssue({ code: z.ZodIssueCode.custom, path: ['to_account_id'], message: 'Выберите счёт зачисления' })
       if (isTransfer && values.account_id && values.to_account_id === values.account_id) context.addIssue({ code: z.ZodIssueCode.custom, path: ['to_account_id'], message: 'Счета перевода должны отличаться' })
       if (values.transaction_type === 'adjustment' && !values.comment?.trim()) context.addIssue({ code: z.ZodIssueCode.custom, path: ['comment'], message: 'Для корректировки нужен комментарий' })
+      const targetCurrency = isTransfer ? targetAccount?.currency : sourceAccount?.currency
+      const needsRate = Boolean(values.amount && targetCurrency && sourceCurrency !== targetCurrency && (isTransfer || values.transaction_type === 'expense' || values.transaction_type === 'refund'))
+      if (needsRate) {
+        try {
+          const converted = convertMinor(parseMoney(values.amount!, sourceCurrency), sourceCurrency, targetCurrency!, values.exchange_rate ?? '')
+          if (converted <= 0) throw new Error('Сумма после конвертации должна быть положительной')
+        } catch (error) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['exchange_rate'], message: (error as Error).message })
+        }
+      }
+    }
+    if ((type === 'income' || type === 'payment') && sourceAccount && values.plan_currency && values.plan_currency !== (sourceAccount.currency ?? 'RUB')) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['plan_currency'], message: 'Валюта плана должна совпадать с валютой счёта' })
     }
     if ((type === 'income' || type === 'payment') && !values.date && !values.month) context.addIssue({ code: z.ZodIssueCode.custom, path: ['date'], message: 'Укажите дату или месяц' })
     if ((type === 'income' || type === 'payment') && values.recurrence !== 'none' && !values.date) context.addIssue({ code: z.ZodIssueCode.custom, path: ['date'], message: 'Для повторения нужна дата первого платежа' })
@@ -110,9 +133,18 @@ function statusBadge(status?: string) {
 }
 
 function resourceName(item: Item) { return 'title' in item ? item.title : 'name' in item ? item.name : item.description || 'Операция' }
-function resourceAmount(item: Item) { return 'amount_minor' in item ? item.amount_minor : item.next_payment_minor ?? item.remaining_payments_minor ?? item.principal_minor ?? 0 }
+function resourceAmount(item: Item) { return 'amount_minor' in item ? 'merchant_amount_minor' in item && item.merchant_amount_minor != null ? item.merchant_amount_minor : item.amount_minor : item.next_payment_minor ?? item.remaining_payments_minor ?? item.principal_minor ?? 0 }
+function resourceCurrency(item: Item, accountCurrencies: Map<string, string>) {
+  if ('name' in item) return 'RUB'
+  if ('type' in item) return item.merchant_currency ?? item.account_currency ?? accountCurrencies.get(String(item.account_id)) ?? 'RUB'
+  return item.currency ?? accountCurrencies.get(String(item.account_id)) ?? 'RUB'
+}
 function resourceDate(item: Item) { return 'date' in item ? item.date : 'name' in item ? item.next_payment_date ?? item.start_date : undefined }
 function resourceSubtitle(item: Item, type: ResourceType, loanNames: Map<string, string>) {
+  if ('merchant_currency' in item && item.merchant_currency && item.merchant_amount_minor != null) {
+    const accountCurrency = item.account_currency ?? 'RUB'
+    return `${item.type === 'refund' ? 'На счёт +' : 'Со счёта −'}${formatMoney(item.amount_minor, accountCurrency)} · курс ${item.merchant_exchange_rate ?? '—'} ${accountCurrency} за 1 ${item.merchant_currency}`
+  }
   if (type === 'loan' && 'name' in item) {
     return [
       item.creditor,
@@ -147,6 +179,8 @@ export function ResourcePage({ type }: { type: ResourceType }) {
   const loanNames = new Map(loanItems.map((loan) => [String(loan.id), loan.name]))
   const activeScheduleLoan = scheduleLoan ? loanItems.find((loan) => String(loan.id) === String(scheduleLoan.id)) ?? scheduleLoan : null
   const accountNames = new Map(asList(accounts.data).map((account) => [String(account.id), account.name]))
+  const accountCurrencies = new Map(asList(accounts.data).map((account) => [String(account.id), account.currency ?? 'RUB']))
+  const baseCurrency = (!Array.isArray(accounts.data) ? (accounts.data as { base_currency?: string } | undefined)?.base_currency : undefined) ?? 'RUB'
   const transferItems = asList(transfers.data).filter((transfer) => {
     const label = `${accountNames.get(String(transfer.from_account_id)) ?? 'Счёт'} ${accountNames.get(String(transfer.to_account_id)) ?? 'Счёт'} ${transfer.comment ?? ''}`
     return label.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))
@@ -164,18 +198,53 @@ export function ResourcePage({ type }: { type: ResourceType }) {
       ...(includeTransfers ? [client.invalidateQueries({ queryKey: ['/transfers'] })] : []),
     ])
   }
+  const accountCurrency = (id?: string) => asList(accounts.data).find((account) => String(account.id) === id)?.currency ?? 'RUB'
+  const transactionAmounts = (values: FormValues) => {
+    const accountUnit = accountCurrency(values.account_id)
+    const purchaseUnit = values.transaction_type === 'expense' || values.transaction_type === 'refund'
+      ? values.payment_currency || accountUnit
+      : accountUnit
+    const purchaseMinor = parseMoney(values.amount!, purchaseUnit)
+    const converted = purchaseUnit !== accountUnit
+    return {
+      amount_minor: converted ? convertMinor(purchaseMinor, purchaseUnit, accountUnit, values.exchange_rate ?? '') : purchaseMinor,
+      merchant_currency: converted ? purchaseUnit : null,
+      merchant_amount_minor: converted ? purchaseMinor : null,
+      merchant_exchange_rate: converted ? values.exchange_rate?.trim().replace(',', '.') : null,
+    }
+  }
   const save = useMutation<unknown, Error, ResourceSubmission>({ mutationFn: ({ values, idempotencyKey, item }) => {
+    const sourceCurrency = accountCurrency(values.account_id)
+    const planCurrency = values.plan_currency || sourceCurrency
     if (item) {
-      if ('from_account_id' in item) return api(`/transfers/${item.id}`, { method: 'PATCH', body: jsonBody({ from_account_id: Number(values.account_id), to_account_id: Number(values.to_account_id), amount_minor: parseMoney(values.amount!), date: values.date, comment: values.comment?.trim() || null, version: itemVersion(item) }) })
+      if ('from_account_id' in item) return api(`/transfers/${item.id}`, { method: 'PATCH', body: jsonBody({
+        from_account_id: Number(values.account_id), to_account_id: Number(values.to_account_id),
+        amount_minor: parseMoney(values.amount!, sourceCurrency), exchange_rate: sourceCurrency === accountCurrency(values.to_account_id) ? null : values.exchange_rate?.trim().replace(',', '.') || null,
+        date: values.date, comment: values.comment?.trim() || null, version: itemVersion(item),
+      }) })
       if (type === 'loan') return api(`/loans/${item.id}`, { method: 'PATCH', body: jsonBody({ name: values.title!.trim(), creditor: values.creditor?.trim() || null, principal_minor: values.amount?.trim() ? parseMoney(values.amount) : null, principal_as_of: values.principal_as_of || null, annual_rate_bps: parseRateBps(values.annual_rate_percent), interest_method: values.interest_method || 'simple', schedule_mode: values.schedule_mode || 'manual', first_payment_date: values.first_payment_date || null, account_id: values.account_id ? Number(values.account_id) : null, start_date: values.start_date || null, end_date: values.end_date || null, comment: values.comment?.trim() || null, version: itemVersion(item) }) })
-      if (type === 'transaction') return api(`/transactions/${item.id}`, { method: 'PATCH', body: jsonBody({ amount_minor: parseMoney(values.amount!), date: values.date, category_id: values.category_id ? Number(values.category_id) : null, description: values.title!.trim(), comment: values.comment?.trim() || null, tag_ids: numericIds(values.tag_ids), version: itemVersion(item) }) })
-      return api(`/plan-items/${item.id}`, { method: 'PATCH', body: jsonBody({ title: values.title!.trim(), amount_minor: parseMoney(values.amount!), end_date: values.end_date || null, certainty: values.certainty || 'confirmed', account_id: values.account_id ? Number(values.account_id) : null, category_id: values.category_id ? Number(values.category_id) : null, loan_id: values.loan_id ? Number(values.loan_id) : null, tag_ids: numericIds(values.tag_ids), comment: values.comment?.trim() || null, version: itemVersion(item) }) })
+      if (type === 'transaction') return api(`/transactions/${item.id}`, { method: 'PATCH', body: jsonBody({
+        ...transactionAmounts(values), date: values.date,
+        category_id: values.category_id ? Number(values.category_id) : null,
+        description: values.title!.trim(), comment: values.comment?.trim() || null,
+        tag_ids: numericIds(values.tag_ids), version: itemVersion(item),
+      }) })
+      return api(`/plan-items/${item.id}`, { method: 'PATCH', body: jsonBody({ title: values.title!.trim(), amount_minor: parseMoney(values.amount!, planCurrency), end_date: values.end_date || null, certainty: values.certainty || 'confirmed', account_id: values.account_id ? Number(values.account_id) : null, category_id: values.category_id ? Number(values.category_id) : null, loan_id: values.loan_id ? Number(values.loan_id) : null, tag_ids: numericIds(values.tag_ids), comment: values.comment?.trim() || null, version: itemVersion(item) }) })
     }
     if (type === 'loan') return api(config.endpoint, { method: 'POST', body: jsonBody({ name: values.title!.trim(), creditor: values.creditor?.trim() || null, principal_minor: values.amount?.trim() ? parseMoney(values.amount) : null, principal_as_of: values.principal_as_of || null, annual_rate_bps: parseRateBps(values.annual_rate_percent), interest_method: values.interest_method || 'simple', schedule_mode: values.schedule_mode || 'manual', first_payment_date: values.first_payment_date || null, account_id: values.account_id ? Number(values.account_id) : null, start_date: values.start_date || null, end_date: values.end_date || null, comment: values.comment?.trim() || null }) })
-    if (type === 'transaction' && values.transaction_type === 'transfer') return api('/transfers', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: jsonBody({ from_account_id: Number(values.account_id), to_account_id: Number(values.to_account_id), amount_minor: parseMoney(values.amount!), date: values.date, comment: values.comment || null }) })
-    if (type === 'transaction') return api(config.endpoint, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: jsonBody({ type: values.transaction_type || 'expense', amount_minor: parseMoney(values.amount!), date: values.date, account_id: Number(values.account_id), category_id: values.category_id ? Number(values.category_id) : null, ...(values.loan_id ? { loan_id: Number(values.loan_id), prepayment_strategy: values.prepayment_strategy || null } : {}), description: values.title!.trim(), comment: values.comment || null, tag_ids: numericIds(values.tag_ids) }) })
+    if (type === 'transaction' && values.transaction_type === 'transfer') return api('/transfers', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: jsonBody({
+      from_account_id: Number(values.account_id), to_account_id: Number(values.to_account_id),
+      amount_minor: parseMoney(values.amount!, sourceCurrency), exchange_rate: sourceCurrency === accountCurrency(values.to_account_id) ? null : values.exchange_rate?.trim().replace(',', '.') || null,
+      date: values.date, comment: values.comment || null,
+    }) })
+    if (type === 'transaction') return api(config.endpoint, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: jsonBody({
+      type: values.transaction_type || 'expense', ...transactionAmounts(values), date: values.date,
+      account_id: Number(values.account_id), category_id: values.category_id ? Number(values.category_id) : null,
+      ...(values.loan_id ? { loan_id: Number(values.loan_id), prepayment_strategy: values.prepayment_strategy || null } : {}),
+      description: values.title!.trim(), comment: values.comment || null, tag_ids: numericIds(values.tag_ids),
+    }) })
     const recurrence = values.recurrence || 'none'
-    return api(config.endpoint, { method: 'POST', body: jsonBody({ kind: type === 'income' ? 'income' : 'expense', title: values.title!.trim(), amount_minor: parseMoney(values.amount!), date: values.date || null, month: values.date ? null : values.month, recurrence, start_date: recurrence === 'none' ? null : values.date, end_date: values.end_date || null, certainty: values.certainty || 'confirmed', account_id: values.account_id ? Number(values.account_id) : null, category_id: values.category_id ? Number(values.category_id) : null, loan_id: type === 'payment' && values.loan_id ? Number(values.loan_id) : null, funding_source: 'free', tag_ids: numericIds(values.tag_ids), comment: values.comment?.trim() || null }) })
+    return api(config.endpoint, { method: 'POST', body: jsonBody({ kind: type === 'income' ? 'income' : 'expense', title: values.title!.trim(), amount_minor: parseMoney(values.amount!, planCurrency), currency: planCurrency, date: values.date || null, month: values.date ? null : values.month, recurrence, start_date: recurrence === 'none' ? null : values.date, end_date: values.end_date || null, certainty: values.certainty || 'confirmed', account_id: values.account_id ? Number(values.account_id) : null, category_id: values.category_id ? Number(values.category_id) : null, loan_id: type === 'payment' && values.loan_id ? Number(values.loan_id) : null, funding_source: 'free', tag_ids: numericIds(values.tag_ids), comment: values.comment?.trim() || null }) })
   }, onSuccess: async (_result, { values, item }) => {
     await invalidate(values.transaction_type === 'transfer' || Boolean(item && 'from_account_id' in item))
     if (values.transaction_type === 'transfer') {
@@ -214,11 +283,11 @@ export function ResourcePage({ type }: { type: ResourceType }) {
         <div><strong>{resourceName(item)}</strong><small>{resourceSubtitle(item, type, loanNames)}</small></div>
         <span>{dateLabel(resourceDate(item))}</span>
         <span>{type === 'loan' && 'archived' in item && item.archived ? statusBadge('archived') : 'status' in item ? statusBadge(item.status) : 'type' in item ? statusBadge(item.type) : statusBadge(item.status)}</span>
-        <strong className={(('kind' in item && item.kind === 'income') || ('type' in item && item.type === 'income')) ? 'positive' : ''}>{formatMoney(resourceAmount(item))}</strong>
+        <strong className={(('kind' in item && item.kind === 'income') || ('type' in item && item.type === 'income')) ? 'positive' : ''}>{formatMoney(resourceAmount(item), resourceCurrency(item, accountCurrencies))}</strong>
         <div className="row-actions">
           {type === 'loan' && !(item as Loan).archived && <button className="icon-button" aria-label={`График кредита ${resourceName(item)}`} title="График" onClick={() => setScheduleLoan(item as Loan)}><CalendarPlus/></button>}
           {(type === 'income' || type === 'payment') && <button className="icon-button" aria-label={`Сверить с фактом ${resourceName(item)}`} title="Сверить" onClick={() => setMatchingPlan(item as PlanItem)}><ArrowRight/></button>}
-          {type === 'transaction' && (item as Transaction).type === 'expense' && (item as Transaction).loan_id == null && !(item as Transaction).external_source?.startsWith('loan_schedule:') && <button className="icon-button" aria-label={`Связать с кредитом ${resourceName(item)}`} title="Связать с кредитом" onClick={() => setLinkingTransaction(item as Transaction)}><Link2/></button>}
+          {type === 'transaction' && (item as Transaction).type === 'expense' && (accountCurrencies.get(String((item as Transaction).account_id)) ?? (item as Transaction).account_currency ?? baseCurrency) === baseCurrency && (item as Transaction).loan_id == null && !(item as Transaction).external_source?.startsWith('loan_schedule:') && <button className="icon-button" aria-label={`Связать с кредитом ${resourceName(item)}`} title="Связать с кредитом" onClick={() => setLinkingTransaction(item as Transaction)}><Link2/></button>}
           {type === 'transaction' && (item as Transaction).loan_id != null && (item as Transaction).loan_balance_applied === false && <button className="icon-button" aria-label={`Отвязать от кредита ${resourceName(item)}`} title="Отвязать от кредита" onClick={() => { if (window.confirm(`Убрать связь операции «${resourceName(item)}» с кредитом?`)) unlinkLoan.mutate(item as Transaction) }}><Link2/></button>}
           <button className="icon-button" aria-label={`Изменить ${resourceName(item)}`} title="Изменить" onClick={() => editItem(item)}><Pencil/></button>
           {type === 'loan' && <button className="icon-button" aria-label={`${(item as Loan).archived ? 'Восстановить' : 'Архивировать'} ${resourceName(item)}`} title={(item as Loan).archived ? 'Восстановить' : 'Архивировать'} onClick={() => {
@@ -241,23 +310,24 @@ export function ResourcePage({ type }: { type: ResourceType }) {
       {!transfers.isLoading && !transfers.isError && (transferItems.length ? <div className="data-card">
         <div className="data-list data-list--header"><span>Направление</span><span>Дата</span><span>Тип</span><span>Сумма</span><span /></div>
         {transferItems.map((transfer) => <div className="data-list" key={transfer.id}>
-          <div><strong>{accountNames.get(String(transfer.from_account_id)) ?? `Счёт ${transfer.from_account_id}`} → {accountNames.get(String(transfer.to_account_id)) ?? `Счёт ${transfer.to_account_id}`}</strong><small>{transfer.comment || 'Внутреннее перемещение'}</small></div>
-          <span>{dateLabel(transfer.date)}</span><span><Badge tone="neutral">Перевод</Badge></span><strong>{formatMoney(transfer.amount_minor)}</strong><div className="row-actions"><button className="icon-button" aria-label={`Изменить перевод ${transfer.id}`} title="Изменить" onClick={() => editItem(transfer)}><Pencil/></button><button className="icon-button icon-button--danger" aria-label={`Удалить перевод ${transfer.id}`} title="Удалить" onClick={() => deleteItem('/transfers', transfer, `перевод от ${dateLabel(transfer.date)}`)}><Trash2/></button></div>
+          <div><strong>{accountNames.get(String(transfer.from_account_id)) ?? `Счёт ${transfer.from_account_id}`} → {accountNames.get(String(transfer.to_account_id)) ?? `Счёт ${transfer.to_account_id}`}</strong><small>{transfer.comment || `Курс: 1 ${accountCurrencies.get(String(transfer.from_account_id)) ?? 'RUB'} = ${transfer.exchange_rate ?? 1} ${accountCurrencies.get(String(transfer.to_account_id)) ?? 'RUB'}`}</small></div>
+          <span>{dateLabel(transfer.date)}</span><span><Badge tone="neutral">Перевод</Badge></span><strong>{formatMoney(transfer.amount_minor, accountCurrencies.get(String(transfer.from_account_id)) ?? 'RUB')} → {formatMoney(transfer.to_amount_minor ?? transfer.amount_minor, accountCurrencies.get(String(transfer.to_account_id)) ?? 'RUB')}</strong><div className="row-actions"><button className="icon-button" aria-label={`Изменить перевод ${transfer.id}`} title="Изменить" onClick={() => editItem(transfer)}><Pencil/></button><button className="icon-button icon-button--danger" aria-label={`Удалить перевод ${transfer.id}`} title="Удалить" onClick={() => deleteItem('/transfers', transfer, `перевод от ${dateLabel(transfer.date)}`)}><Trash2/></button></div>
         </div>)}
       </div> : <State title={asList(transfers.data).length ? 'Переводы не найдены' : 'Переводов пока нет'}>{asList(transfers.data).length ? 'Измените строку поиска.' : 'Нажмите «Перевод между счетами», чтобы создать первый перевод.'}</State>)}
     </section>}
-    {(open || editing) && <ResourceForm type={type} item={editing ?? undefined} initialTransactionType={quickTransfer ? 'transfer' : undefined} accounts={asList(accounts.data)} categories={asList(categories.data)} tags={asList(tags.data)} loans={loanItems} mutation={save} onClose={() => { setOpen(false); setEditing(null); setQuickTransfer(false) }}/>}
+    {(open || editing) && <ResourceForm type={type} item={editing ?? undefined} initialTransactionType={quickTransfer ? 'transfer' : undefined} accounts={asList(accounts.data)} categories={asList(categories.data)} tags={asList(tags.data)} loans={loanItems} baseCurrency={baseCurrency} mutation={save} onClose={() => { setOpen(false); setEditing(null); setQuickTransfer(false) }}/>}
     {matchingPlan && <PlanMatchForm plan={matchingPlan} onClose={() => setMatchingPlan(null)} />}
     {linkingTransaction && <LoanTransactionLinkForm transaction={linkingTransaction} loans={loanItems} onClose={() => setLinkingTransaction(null)} />}
     {activeScheduleLoan && (activeScheduleLoan.schedule_mode === 'auto' ? <AutoLoanProjection loan={activeScheduleLoan} onClose={() => setScheduleLoan(null)} /> : <LoanSchedule loan={activeScheduleLoan} accounts={asList(accounts.data)} categories={asList(categories.data)} onClose={() => setScheduleLoan(null)} />)}
   </div>
 }
 
-function resourceDefaults(type: ResourceType, item?: EditableItem, initialTransactionType = 'expense'): FormValues {
-  if (!item) return { certainty: 'confirmed', recurrence: 'none', transaction_type: initialTransactionType, interest_method: 'simple', schedule_mode: 'manual', loan_id: '', prepayment_strategy: '', tag_ids: [] }
+function resourceDefaults(type: ResourceType, item?: EditableItem, initialTransactionType = 'expense', accounts: Account[] = [], baseCurrency = 'RUB'): FormValues {
+  const accountCurrency = (id?: ID | null) => accounts.find((account) => String(account.id) === String(id))?.currency ?? baseCurrency
+  if (!item) return { certainty: 'confirmed', recurrence: 'none', transaction_type: initialTransactionType, interest_method: 'simple', schedule_mode: 'manual', loan_id: '', prepayment_strategy: '', payment_currency: '', plan_currency: baseCurrency, exchange_rate: '', tag_ids: [] }
   if ('from_account_id' in item) return {
-    transaction_type: 'transfer', amount: moneyInput(item.amount_minor), date: item.date,
-    account_id: String(item.from_account_id), to_account_id: String(item.to_account_id), comment: item.comment ?? '', tag_ids: [],
+    transaction_type: 'transfer', amount: moneyInput(item.amount_minor, accountCurrency(item.from_account_id)), date: item.date,
+    account_id: String(item.from_account_id), to_account_id: String(item.to_account_id), exchange_rate: String(item.exchange_rate ?? '1'), comment: item.comment ?? '', tag_ids: [],
   }
   if (type === 'loan') {
     const loan = item as Loan
@@ -265,21 +335,80 @@ function resourceDefaults(type: ResourceType, item?: EditableItem, initialTransa
   }
   if (type === 'transaction') {
     const transaction = item as Transaction
-    return { title: transaction.description ?? '', amount: moneyInput(transaction.amount_minor), date: transaction.date, account_id: transaction.account_id == null ? '' : String(transaction.account_id), category_id: transaction.category_id == null ? '' : String(transaction.category_id), loan_id: transaction.loan_id == null ? '' : String(transaction.loan_id), prepayment_strategy: transaction.prepayment_strategy ?? '', transaction_type: transaction.type, comment: transaction.comment ?? '', tag_ids: transaction.tags?.map((tag) => String(tag.id)) ?? [] }
+    const currency = transaction.merchant_currency ?? accountCurrency(transaction.account_id)
+    const amount = transaction.merchant_amount_minor ?? transaction.amount_minor
+    return { title: transaction.description ?? '', amount: moneyInput(amount, currency), payment_currency: currency, exchange_rate: transaction.merchant_exchange_rate == null ? '' : String(transaction.merchant_exchange_rate), date: transaction.date, account_id: transaction.account_id == null ? '' : String(transaction.account_id), category_id: transaction.category_id == null ? '' : String(transaction.category_id), loan_id: transaction.loan_id == null ? '' : String(transaction.loan_id), prepayment_strategy: transaction.prepayment_strategy ?? '', transaction_type: transaction.type, comment: transaction.comment ?? '', tag_ids: transaction.tags?.map((tag) => String(tag.id)) ?? [] }
   }
   const plan = item as PlanItem
-  return { title: plan.title, amount: moneyInput(plan.amount_minor), date: plan.date ?? plan.start_date ?? '', month: plan.month ?? '', account_id: plan.account_id == null ? '' : String(plan.account_id), category_id: plan.category_id == null ? '' : String(plan.category_id), loan_id: plan.loan_id == null ? '' : String(plan.loan_id), recurrence: plan.recurrence, certainty: plan.certainty, end_date: plan.end_date ?? '', comment: plan.comment ?? '', tag_ids: plan.tags?.map((tag) => String(tag.id)) ?? [] }
+  return { title: plan.title, amount: moneyInput(plan.amount_minor, plan.currency ?? baseCurrency), plan_currency: plan.currency ?? baseCurrency, date: plan.date ?? plan.start_date ?? '', month: plan.month ?? '', account_id: plan.account_id == null ? '' : String(plan.account_id), category_id: plan.category_id == null ? '' : String(plan.category_id), loan_id: plan.loan_id == null ? '' : String(plan.loan_id), recurrence: plan.recurrence, certainty: plan.certainty, end_date: plan.end_date ?? '', comment: plan.comment ?? '', tag_ids: plan.tags?.map((tag) => String(tag.id)) ?? [] }
 }
 
-function ResourceForm({ type, item, initialTransactionType, accounts, categories, tags, loans, mutation, onClose }: { type: ResourceType; item?: EditableItem; initialTransactionType?: string; accounts: Account[]; categories: Category[]; tags: Tag[]; loans: Loan[]; mutation: ReturnType<typeof useMutation<unknown, Error, ResourceSubmission>>; onClose: () => void }) {
+function ResourceForm({ type, item, initialTransactionType, accounts, categories, tags, loans, baseCurrency, mutation, onClose }: { type: ResourceType; item?: EditableItem; initialTransactionType?: string; accounts: Account[]; categories: Category[]; tags: Tag[]; loans: Loan[]; baseCurrency: string; mutation: ReturnType<typeof useMutation<unknown, Error, ResourceSubmission>>; onClose: () => void }) {
   const submissionKey = useRef<string | null>(null)
-  const { register, handleSubmit, watch, formState: { errors, isDirty } } = useForm<FormValues>({ resolver: zodResolver(schemaFor(type)), defaultValues: resourceDefaults(type, item, initialTransactionType) })
+  const { register, handleSubmit, watch, setValue, getValues, formState: { errors, isDirty } } = useForm<FormValues>({ resolver: zodResolver(schemaFor(type, accounts)), defaultValues: resourceDefaults(type, item, initialTransactionType, accounts, baseCurrency) })
   const transactionType = watch('transaction_type')
   const accountId = watch('account_id')
+  const toAccountId = watch('to_account_id')
+  const paymentCurrencyValue = watch('payment_currency')
+  const planCurrencyValue = watch('plan_currency')
+  const amountValue = watch('amount')
+  const entryDate = watch('date')
+  const exchangeRate = watch('exchange_rate')
   const recurrence = watch('recurrence')
   const loanId = watch('loan_id')
   const scheduleMode = watch('schedule_mode')
   const isTransfer = type === 'transaction' && transactionType === 'transfer'
+  const sourceCurrency = accounts.find((account) => String(account.id) === accountId)?.currency ?? 'RUB'
+  const targetCurrency = accounts.find((account) => String(account.id) === toAccountId)?.currency ?? 'RUB'
+  const paymentCurrency = paymentCurrencyValue || sourceCurrency
+  const isPayment = type === 'transaction' && !isTransfer && (transactionType === 'expense' || transactionType === 'refund')
+  const conversionFrom = isTransfer ? sourceCurrency : paymentCurrency
+  const conversionTo = isTransfer ? targetCurrency : sourceCurrency
+  const needsConversion = (isTransfer && Boolean(accountId && toAccountId) || isPayment && Boolean(accountId)) && conversionFrom !== conversionTo
+  const pairKey = `${conversionFrom}/${conversionTo}/${entryDate ?? ''}`
+  const previousPair = useRef(pairKey)
+  useEffect(() => {
+    if (previousPair.current !== pairKey) {
+      previousPair.current = pairKey
+      setValue('exchange_rate', '', { shouldDirty: true })
+    }
+  }, [pairKey, setValue])
+  const quote = useQuery<FxQuote>({
+    queryKey: ['currency-quote', conversionFrom, conversionTo, entryDate],
+    queryFn: () => api(`/currencies/quote?${queryString({ from_currency: conversionFrom, to_currency: conversionTo, on_date: entryDate })}`),
+    enabled: Boolean(needsConversion && entryDate), retry: false,
+  })
+  useEffect(() => {
+    if (quote.data && !getValues('exchange_rate')) setValue('exchange_rate', quote.data.rate)
+  }, [quote.data, getValues, setValue])
+  let conversionPreview: string | null = null
+  if (needsConversion && amountValue && exchangeRate) {
+    try {
+      const entered = parseMoney(amountValue, conversionFrom)
+      conversionPreview = formatMoney(convertMinor(entered, conversionFrom, conversionTo, exchangeRate), conversionTo)
+    } catch { /* validation is shown beside the rate field */ }
+  }
+  let accountPreview: string | null = conversionPreview
+  let sourcePreview: string | null = null
+  if (isTransfer && amountValue) {
+    try { sourcePreview = formatMoney(parseMoney(amountValue, sourceCurrency), sourceCurrency) } catch { /* form validation follows */ }
+  }
+  if (!needsConversion && amountValue && accountId && (isPayment || isTransfer)) {
+    try { accountPreview = formatMoney(parseMoney(amountValue, sourceCurrency), sourceCurrency) } catch { /* form validation follows */ }
+  }
+  const enteredCurrency = isTransfer ? sourceCurrency : isPayment ? paymentCurrency :
+    type === 'income' || type === 'payment' ? planCurrencyValue || sourceCurrency :
+    type === 'loan' ? 'RUB' : sourceCurrency
+  useEffect(() => {
+    if (loanId && (type === 'payment' ? enteredCurrency : sourceCurrency) !== baseCurrency) {
+      setValue('loan_id', '', { shouldDirty: true })
+    }
+  }, [loanId, type, enteredCurrency, sourceCurrency, baseCurrency, setValue])
+  useEffect(() => {
+    if ((type === 'income' || type === 'payment') && accountId) {
+      setValue('plan_currency', sourceCurrency, { shouldDirty: true })
+    }
+  }, [type, accountId, sourceCurrency, setValue])
   const isEditing = Boolean(item)
   const linkedTransaction = type === 'transaction' && item != null && 'loan_id' in item && item.loan_id != null
   const currentAccountIds = new Set<string>()
@@ -314,15 +443,20 @@ function ResourceForm({ type, item, initialTransactionType, accounts, categories
     {type === 'transaction' && <Field label="Тип операции" hint={isEditing ? 'Тип сохранённой операции нельзя изменить' : undefined}>{isEditing ? <div className="field-control"><Select value={transactionType} disabled><option value="expense">Расход</option><option value="income">Доход</option><option value="refund">Возврат расхода</option><option value="adjustment">Корректировка остатка</option><option value="transfer">Перевод между счетами</option></Select><input type="hidden" {...register('transaction_type')} /></div> : <Select {...register('transaction_type')} autoFocus><option value="expense">Расход</option><option value="income">Доход</option><option value="refund">Возврат расхода</option><option value="adjustment">Корректировка остатка</option><option value="transfer">Перевод между счетами</option></Select>}</Field>}
     {!isTransfer && <Field label="Название" error={errors.title?.message}><Input {...register('title')} autoFocus={type !== 'transaction'} placeholder={type === 'income' ? 'Например, зарплата' : type === 'loan' ? 'Например, ипотека' : 'Например, аренда'} /></Field>}
     {type === 'loan' && <Field label="Кредитор"><Input {...register('creditor')} /></Field>}
-    <Field label={type === 'loan' ? 'Известный основной долг' : 'Сумма'} error={errors.amount?.message} hint={linkedTransaction ? 'Сумма связанного с кредитом платежа защищена' : undefined}><Input inputMode="decimal" {...register('amount')} placeholder="0,00" readOnly={linkedTransaction} /></Field>
+    <Field label={type === 'loan' ? 'Известный основной долг' : isTransfer ? `Списать, ${enteredCurrency}` : isPayment ? `Сумма оплаты, ${enteredCurrency}` : `Сумма, ${enteredCurrency}`} error={errors.amount?.message} hint={linkedTransaction ? 'Сумма связанного с кредитом платежа защищена' : undefined}><Input inputMode="decimal" {...register('amount')} placeholder="0,00" readOnly={linkedTransaction} /></Field>
     {type !== 'loan' && <Field label="Дата" error={errors.date?.message} hint={isEditing && !isTransfer && type !== 'transaction' ? 'Дата и периодичность плана фиксируются при создании' : linkedTransaction ? 'Дата связанного с кредитом платежа защищена' : undefined}><Input type="date" {...register('date')} readOnly={isEditing && ((type !== 'transaction' && !isTransfer) || linkedTransaction)} /></Field>}
     {(type === 'income' || type === 'payment') && <><Field label="Только месяц" hint="Используйте, если точный день неизвестен"><Input type="month" {...register('month')} readOnly={isEditing} /></Field><Field label="Повторение">{isEditing ? <div className="field-control"><Select value={recurrence} disabled><option value="none">Не повторять</option><option value="monthly">Каждый месяц</option><option value="yearly">Каждый год</option></Select><input type="hidden" {...register('recurrence')} /></div> : <Select {...register('recurrence')}><option value="none">Не повторять</option><option value="monthly">Каждый месяц</option><option value="yearly">Каждый год</option></Select>}</Field><Field label="Дата окончания" hint="Необязательно, для повторяющихся планов"><Input type="date" {...register('end_date')} /></Field></>}
     {type === 'income' && <Field label="Определённость"><Select {...register('certainty')}><option value="confirmed">Подтверждён</option><option value="possible">Возможен</option></Select></Field>}
-    {type === 'loan' && <><Field label="Годовая ставка, %" error={errors.annual_rate_percent?.message}><Input inputMode="decimal" {...register('annual_rate_percent')} placeholder="Например, 12,5" /></Field><Field label="Начисление процентов"><Select {...register('interest_method')}><option value="simple">Простые — на остаток долга</option><option value="compound">Сложные — ежедневная капитализация</option></Select></Field><Field label="График"><Select {...register('schedule_mode')}><option value="manual">Ручной график банка</option><option value="auto">Расчётный аннуитетный график</option></Select></Field><Field label="Остаток долга на дату"><Input type="date" {...register('principal_as_of')} /></Field><Field label="Счёт списания"><Select {...register('account_id')}><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(account.name, account.archived)}</option>)}</Select></Field><Field label="Дата начала"><Input type="date" {...register('start_date')} /></Field>{scheduleMode === 'auto' && <Field label="Первый платёж"><Input type="date" {...register('first_payment_date')} /></Field>}<Field label="Дата окончания"><Input type="date" {...register('end_date')} /></Field><p className="form-hint form-span">Расчёт использует фактические дни в году. Сверяйте суммы с графиком банка: правила округления и капитализации могут отличаться.</p></>}
-    {type !== 'loan' && <Field label={isTransfer ? 'Со счёта' : 'Счёт'} error={errors.account_id?.message} hint={isEditing && type === 'transaction' && !isTransfer ? 'Счёт сохранённой операции нельзя изменить' : undefined}>{isEditing && type === 'transaction' && !isTransfer ? <div className="field-control"><Select value={accountId} disabled><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(account.name, account.archived)}</option>)}</Select><input type="hidden" {...register('account_id')} /></div> : <Select {...register('account_id')}><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(account.name, account.archived)}</option>)}</Select>}</Field>}
-    {(type === 'payment' || (type === 'transaction' && transactionType === 'expense')) && <Field label="Кредит" hint={type === 'transaction' ? 'Для ручного графика вносите факт через карточку кредита' : selectedLoan?.schedule_mode === 'auto' && selectedLoan.annuity_payment_minor != null ? `Расчётный аннуитетный платёж: ${formatMoney(selectedLoan.annuity_payment_minor)}. В прогнозе учитывается график кредита.` : 'Связанный платёж не дублируется с графиком кредита'}><Select {...register('loan_id')} disabled={type === 'transaction' && isEditing}><option value="">Не связан</option>{availableLoans.filter((loan) => type === 'payment' || loan.schedule_mode === 'auto' || String(loan.id) === loanId).map((loan) => <option key={loan.id} value={loan.id}>{optionLabel(loan.name, loan.archived)}</option>)}</Select></Field>}
+    {type === 'loan' && <><Field label="Годовая ставка, %" error={errors.annual_rate_percent?.message}><Input inputMode="decimal" {...register('annual_rate_percent')} placeholder="Например, 12,5" /></Field><Field label="Начисление процентов"><Select {...register('interest_method')}><option value="simple">Простые — на остаток долга</option><option value="compound">Сложные — ежедневная капитализация</option></Select></Field><Field label="График"><Select {...register('schedule_mode')}><option value="manual">Ручной график банка</option><option value="auto">Расчётный аннуитетный график</option></Select></Field><Field label="Остаток долга на дату"><Input type="date" {...register('principal_as_of')} /></Field><Field label="Счёт списания"><Select {...register('account_id')}><option value="">Не выбран</option>{availableAccounts.filter((account) => (account.currency ?? 'RUB') === baseCurrency).map((account) => <option key={account.id} value={account.id}>{optionLabel(`${account.name} · ${account.currency ?? 'RUB'}`, account.archived)}</option>)}</Select></Field><Field label="Дата начала"><Input type="date" {...register('start_date')} /></Field>{scheduleMode === 'auto' && <Field label="Первый платёж"><Input type="date" {...register('first_payment_date')} /></Field>}<Field label="Дата окончания"><Input type="date" {...register('end_date')} /></Field><p className="form-hint form-span">Расчёт использует фактические дни в году. Сверяйте суммы с графиком банка: правила округления и капитализации могут отличаться.</p></>}
+    {type !== 'loan' && <Field label={isTransfer ? 'Со счёта' : 'Счёт'} error={errors.account_id?.message} hint={isEditing && type === 'transaction' && !isTransfer ? 'Счёт сохранённой операции нельзя изменить' : undefined}>{isEditing && type === 'transaction' && !isTransfer ? <div className="field-control"><Select value={accountId} disabled><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(`${account.name} · ${account.currency ?? 'RUB'}`, account.archived)}</option>)}</Select><input type="hidden" {...register('account_id')} /></div> : <Select {...register('account_id')}><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(`${account.name} · ${account.currency ?? 'RUB'}`, account.archived)}</option>)}</Select>}</Field>}
+    {isPayment && <Field label="Валюта оплаты" hint="Сумма выше будет показана в этой валюте"><CurrencySelect value={paymentCurrency} onChange={(value) => setValue('payment_currency', value, { shouldDirty: true })}/></Field>}
+    {(type === 'income' || type === 'payment') && <Field label="Валюта плана" error={errors.plan_currency?.message} hint={accountId ? 'Совпадает с валютой выбранного счёта' : 'Без счёта выберите валюту плана'}><CurrencySelect value={planCurrencyValue || sourceCurrency} onChange={(value) => setValue('plan_currency', value, { shouldDirty: true })} disabled={Boolean(accountId)}/></Field>}
+    {(type === 'payment' || (type === 'transaction' && transactionType === 'expense')) && (type === 'payment' ? enteredCurrency : sourceCurrency) === baseCurrency && <Field label="Кредит" hint={type === 'transaction' ? 'Для ручного графика вносите факт через карточку кредита' : selectedLoan?.schedule_mode === 'auto' && selectedLoan.annuity_payment_minor != null ? `Расчётный аннуитетный платёж: ${formatMoney(selectedLoan.annuity_payment_minor)}. В прогнозе учитывается график кредита.` : 'Связанный платёж не дублируется с графиком кредита'}><Select {...register('loan_id')} disabled={type === 'transaction' && isEditing}><option value="">Не связан</option>{availableLoans.filter((loan) => type === 'payment' || loan.schedule_mode === 'auto' || String(loan.id) === loanId).map((loan) => <option key={loan.id} value={loan.id}>{optionLabel(loan.name, loan.archived)}</option>)}</Select></Field>}
     {type === 'transaction' && !isEditing && transactionType === 'expense' && loanId && <Field label="Досрочное погашение" hint="Если платёж сверх обычного, выберите способ пересчёта"><Select {...register('prepayment_strategy')}><option value="">Обычный платёж</option><option value="reduce_term">Сократить срок</option><option value="reduce_payment">Уменьшить платёж</option></Select></Field>}
-    {isTransfer && <Field label="На счёт" error={errors.to_account_id?.message}><Select {...register('to_account_id')}><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(account.name, account.archived)}</option>)}</Select></Field>}
+    {isTransfer && <Field label="На счёт" error={errors.to_account_id?.message}><Select {...register('to_account_id')}><option value="">Не выбран</option>{availableAccounts.map((account) => <option key={account.id} value={account.id}>{optionLabel(`${account.name} · ${account.currency ?? 'RUB'}`, account.archived)}</option>)}</Select></Field>}
+    {needsConversion && <details className="fx-details form-span" open><summary>Параметры конвертации · {conversionFrom} → {conversionTo}</summary><div className="form-stack"><Field label={`Курс: 1 ${conversionFrom} в ${conversionTo}`} error={errors.exchange_rate?.message} hint="Фактический курс банка можно изменить вручную"><Input inputMode="decimal" {...register('exchange_rate')} placeholder="Например, 1,10"/></Field>{quote.isLoading && <small>Получаем официальный курс Банка России…</small>}{quote.data && <small>Подсказка ЦБ на {dateLabel(quote.data.effective_date)}: {quote.data.rate.replace('.', ',')} {conversionTo} за 1 {conversionFrom}. Курс банка может отличаться.</small>}{quote.isError && <small>Курс ЦБ недоступен. Введите фактический курс вручную.</small>}</div></details>}
+    {isTransfer && accountId && toAccountId && <p className="fx-preview form-span">Со счёта: −{sourcePreview ?? 'укажите сумму'}<br/>На счёт: +{accountPreview ?? 'укажите сумму и курс'}</p>}
+    {isPayment && accountId && <p className="fx-preview form-span">{transactionType === 'refund' ? 'На счёт вернётся' : 'Со счёта спишется'}: {transactionType === 'refund' ? '+' : '−'}{accountPreview ?? 'укажите сумму и курс'} · {sourceCurrency}</p>}
     {type !== 'loan' && !isTransfer && <Field label="Категория"><Select {...register('category_id')}><option value="">Без категории</option>{availableCategories.map((category) => <option key={category.id} value={category.id}>{optionLabel(category.name, category.archived)}</option>)}</Select></Field>}
     {type !== 'loan' && !isTransfer && <Field label="Теги" hint="Можно выбрать несколько с Ctrl или Cmd"><Select multiple size={Math.min(4, Math.max(2, availableTags.length))} {...register('tag_ids')}>{availableTags.map((tag) => <option key={tag.id} value={tag.id}>{optionLabel(tag.name, tag.archived)}</option>)}</Select></Field>}
     {isTransfer && <p className="form-hint form-span">Перевод создаётся одной атомарной операцией и не попадёт в общие доходы или расходы.</p>}
@@ -392,19 +526,20 @@ function LoanTransactionLinkForm({ transaction, loans, onClose }: { transaction:
   </Modal>
 }
 
-const matchSchema = z.object({
+const matchBaseSchema = z.object({
   transaction_id: z.string().min(1, 'Выберите операцию'),
   occurrence_month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Укажите месяц плана'),
   amount: z.string().min(1, 'Укажите сумму'),
   completed: z.boolean().default(false),
-}).superRefine((values, context) => {
+})
+function matchSchemaFor(currency: string) { return matchBaseSchema.superRefine((values, context) => {
   try {
-    if (parseMoney(values.amount) <= 0) throw new Error()
+    if (parseMoney(values.amount, currency) <= 0) throw new Error()
   } catch {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'Укажите сумму больше нуля' })
   }
-})
-type MatchValues = z.infer<typeof matchSchema>
+}) }
+type MatchValues = z.infer<typeof matchBaseSchema>
 interface MatchSubmission { values: MatchValues; idempotencyKey: string }
 
 function planOccurrenceMonth(plan: PlanItem) {
@@ -413,17 +548,19 @@ function planOccurrenceMonth(plan: PlanItem) {
 }
 
 function PlanMatchForm({ plan, onClose }: { plan: PlanItem; onClose: () => void }) {
+  const currency = plan.currency ?? 'RUB'
   const client = useQueryClient()
   const submissionKey = useRef<string | null>(null)
   const transactions = useQuery<Transaction[] | ListResponse<Transaction>>({
-    queryKey: ['/transactions', 'unmatched', plan.kind],
+    queryKey: ['/transactions', 'unmatched', plan.kind, currency],
     queryFn: () => api('/transactions?limit=500&offset=0'),
   })
   const facts = asList(transactions.data).filter((transaction) => transaction.type === plan.kind
+    && (transaction.account_currency ?? 'RUB') === currency
     && transaction.matched_plan_item_id == null
     && !transaction.external_source?.startsWith('loan_schedule:'))
   const { register, handleSubmit, setValue, formState: { errors, isDirty } } = useForm<MatchValues>({
-    resolver: zodResolver(matchSchema),
+    resolver: zodResolver(matchSchemaFor(currency)),
     defaultValues: { transaction_id: '', occurrence_month: planOccurrenceMonth(plan), amount: '', completed: false },
   })
   const match = useMutation<unknown, Error, MatchSubmission>({
@@ -433,7 +570,7 @@ function PlanMatchForm({ plan, onClose }: { plan: PlanItem; onClose: () => void 
       body: jsonBody({
         transaction_id: Number(values.transaction_id),
         occurrence_month: values.occurrence_month,
-        amount_minor: parseMoney(values.amount),
+        amount_minor: parseMoney(values.amount, currency),
         completed: values.completed,
       }),
     }),
@@ -462,12 +599,12 @@ function PlanMatchForm({ plan, onClose }: { plan: PlanItem; onClose: () => void 
         transactionRegistration.onChange(event)
         const fact = facts.find((item) => String(item.id) === event.target.value)
         if (fact) {
-          setValue('amount', moneyInput(Math.min(plan.amount_minor, fact.amount_minor)), { shouldDirty: true, shouldValidate: true })
+          setValue('amount', moneyInput(Math.min(plan.amount_minor, fact.amount_minor), currency), { shouldDirty: true, shouldValidate: true })
           if (plan.recurrence !== 'none') setValue('occurrence_month', fact.date.slice(0, 7), { shouldDirty: true, shouldValidate: true })
         }
-      }} autoFocus><option value="">Выберите факт</option>{facts.map((fact) => <option key={fact.id} value={fact.id}>{dateLabel(fact.date)} · {fact.description || 'Операция'} · {formatMoney(fact.amount_minor)}</option>)}</Select></Field>
+      }} autoFocus><option value="">Выберите факт</option>{facts.map((fact) => <option key={fact.id} value={fact.id}>{dateLabel(fact.date)} · {fact.description || 'Операция'} · {formatMoney(fact.amount_minor, currency)}</option>)}</Select></Field>
       <Field label="Месяц плана" error={errors.occurrence_month?.message}><Input type="month" {...register('occurrence_month')} /></Field>
-      <Field label="Сумма сверки" error={errors.amount?.message}><Input inputMode="decimal" placeholder="0,00" {...register('amount')} /></Field>
+      <Field label={`Сумма сверки, ${currency}`} error={errors.amount?.message}><Input inputMode="decimal" placeholder="0,00" {...register('amount')} /></Field>
       <label className="import-confirm-option form-span"><input type="checkbox" aria-label="План исполнен полностью" {...register('completed')} /><span><strong>План исполнен полностью</strong><small>Остаток ожидания станет нулевым, даже если сумма факта отличается.</small></span></label>
       {match.isError && <div className="form-alert form-span">{match.error.message}</div>}
       <div className="form-actions form-span"><Button type="button" variant="ghost" onClick={close}>Отмена</Button><Button type="submit" disabled={match.isPending}>{match.isPending ? 'Сверяем…' : 'Сверить'}</Button></div>

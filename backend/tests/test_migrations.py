@@ -67,11 +67,11 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
             ("owner", "hash", "2026-01-01 00:00:00"),
         )
 
-    (versions / "versions" / "0009_test.py").write_text(
+    (versions / "versions" / "0010_test.py").write_text(
         "from alembic import op\n"
         "import sqlalchemy as sa\n"
-        "revision = '0009_test'\n"
-        "down_revision = '0008'\n"
+        "revision = '0010_test'\n"
+        "down_revision = '0009'\n"
         "branch_labels = None\n"
         "depends_on = None\n"
         "def upgrade():\n"
@@ -83,7 +83,7 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
     command.upgrade(alembic, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0009_test",
+            "0010_test",
         )
         assert connection.execute("SELECT username, display_name FROM users").fetchone() == (
             "owner",

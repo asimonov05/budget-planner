@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, CheckCircle2, CirclePlus, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
+import { Archive, ArrowLeftRight, CheckCircle2, CirclePlus, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
 import { ApiError, api, asList, jsonBody, queryString } from '../lib/api'
 import { formatMoney, parseMoney, todayISO } from '../lib/format'
 import { useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
@@ -8,9 +8,11 @@ import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { SalarySettings } from '../components/SalarySettings'
 import { PrivateUsers } from '../components/PrivateUsers'
+import { CurrencySelect } from '../components/CurrencySelect'
+import { CurrencySettings } from '../components/CurrencySettings'
 import type { User } from '../lib/types'
 
-type Tab = 'general'|'salary'|'appearance'|'accounts'|'categories'|'tags'|'users'
+type Tab = 'general'|'salary'|'appearance'|'accounts'|'currencies'|'categories'|'tags'|'users'
 interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; salary_enabled: boolean; version: number }
 type DirectoryKind = 'accounts'|'categories'|'tags'
 type DirectoryItem = Account|Category|Tag
@@ -26,10 +28,10 @@ function actionError(error: Error | null) {
 export function SettingsPage() {
   const [tab, setTab] = useState<Tab>(() => {
     const requested = new URLSearchParams(window.location.search).get('tab')
-    return requested === 'salary' || requested === 'accounts' ? requested : 'general'
+    return requested === 'salary' || requested === 'accounts' || requested === 'currencies' ? requested : 'general'
   })
   const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api('/auth/me') })
-  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, справочники."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button>{me.data?.is_admin && <button className={tab==='users'?'active':''} onClick={() => setTab('users')}><WalletCards/> Пользователи</button>}</aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'users' && me.data?.is_admin && <PrivateUsers/>}</section></div></div>
+  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, валюты и справочники."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='currencies'?'active':''} onClick={() => setTab('currencies')}><ArrowLeftRight/> Валюты</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button>{me.data?.is_admin && <button className={tab==='users'?'active':''} onClick={() => setTab('users')}><WalletCards/> Пользователи</button>}</aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'currencies' && <CurrencySettings/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'users' && me.data?.is_admin && <PrivateUsers/>}</section></div></div>
 }
 
 function GeneralSettings() {
@@ -176,39 +178,41 @@ function Directory({ kind }: { kind: DirectoryKind }) {
   const error = actionError(state.error ?? remove.error)
   return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Справочник</span><h2>{labels[0]}</h2></div><Button onClick={()=>{state.reset();remove.reset();setEditing(null);setOpen(true)}}><CirclePlus/> Добавить</Button></div>
     {error&&<div className="form-alert" role="alert">{error}</div>}
-    {list.isLoading?<State kind="loading" title="Загружаем"/>:list.isError?<State kind="error" title="Не удалось загрузить справочник">{list.error.message}</State>:asList(list.data).length?<div className="directory-list">{asList(list.data).map((item)=><div key={item.id}><span className="color-dot" style={{background:'color' in item ? item.color ?? '#557a5d' : '#557a5d'}}/><div><strong>{item.name}</strong><small>{'current_balance_minor' in item ? `${formatMoney(item.current_balance_minor)} · ${item.archived?'в архиве':'активен'}` : `${item.archived?'В архиве':'Активно'}${'monthly_estimate' in item && item.monthly_estimate ? ' · Оценка по среднему' : ''}`}</small></div>{item.archived&&<Badge>Архив</Badge>}<div className="directory-actions"><button className="icon-button" aria-label={`Изменить ${item.name}`} title="Изменить" onClick={()=>{state.reset();remove.reset();setOpen(false);setEditing(item)}}><Pencil/></button><button className="icon-button" aria-label={`${item.archived?'Восстановить':'Архивировать'} ${item.name}`} title={item.archived?'Восстановить':'Архивировать'} onClick={()=>{
+    {list.isLoading?<State kind="loading" title="Загружаем"/>:list.isError?<State kind="error" title="Не удалось загрузить справочник">{list.error.message}</State>:asList(list.data).length?<div className="directory-list">{asList(list.data).map((item)=><div key={item.id}><span className="color-dot" style={{background:'color' in item ? item.color ?? '#557a5d' : '#557a5d'}}/><div><strong>{item.name}</strong><small>{'current_balance_minor' in item ? `${formatMoney(item.current_balance_minor, 'currency' in item ? item.currency ?? 'RUB' : 'RUB')} · ${item.archived?'в архиве':'активен'}` : `${item.archived?'В архиве':'Активно'}${'monthly_estimate' in item && item.monthly_estimate ? ' · Оценка по среднему' : ''}`}</small></div>{item.archived&&<Badge>Архив</Badge>}<div className="directory-actions"><button className="icon-button" aria-label={`Изменить ${item.name}`} title="Изменить" onClick={()=>{state.reset();remove.reset();setOpen(false);setEditing(item)}}><Pencil/></button><button className="icon-button" aria-label={`${item.archived?'Восстановить':'Архивировать'} ${item.name}`} title={item.archived?'Восстановить':'Архивировать'} onClick={()=>{
       state.reset();remove.reset()
       if(item.archived||window.confirm(`Архивировать ${labels[1]} «${item.name}»? История сохранится.`))state.mutate({item,archived:!item.archived})
     }}>{item.archived?<RotateCcw/>:<Archive/>}</button><button className="icon-button icon-button--danger" aria-label={`Удалить ${item.name}`} title="Удалить" onClick={()=>{
       state.reset();remove.reset()
       if(window.confirm(`Удалить ${labels[1]} «${item.name}» безвозвратно? Связанный с историей объект удалить нельзя.`))remove.mutate(item)
     }}><Trash2/></button></div></div>)}</div>:<State title={`${labels[0]} пока не добавлены`}/>} 
-    {(open||editing)&&<DirectoryForm kind={kind} item={editing??undefined} onClose={()=>{setOpen(false);setEditing(null)}}/>}
+    {(open||editing)&&<DirectoryForm kind={kind} item={editing??undefined} baseCurrency={!Array.isArray(list.data) ? (list.data as (ListResponse<DirectoryItem> & {base_currency?:string}) | undefined)?.base_currency ?? 'RUB' : 'RUB'} onClose={()=>{setOpen(false);setEditing(null)}}/>}
   </Card>
 }
 
-function DirectoryForm({kind,item,onClose}:{kind:DirectoryKind;item?:DirectoryItem;onClose:()=>void}) {
+function DirectoryForm({kind,item,baseCurrency,onClose}:{kind:DirectoryKind;item?:DirectoryItem;baseCurrency:string;onClose:()=>void}) {
   const account=item&&'type'in item?item as Account:undefined
   const category=item&&'kind'in item?item as Category:undefined
   const [name,setName]=useState(item?.name??'')
   const [extra,setExtra]=useState(item&&'color'in item?item.color??'#557a5d':'')
   const [accountType,setAccountType]=useState<'cash'|'bank'|'savings'>((account?.type as 'cash'|'bank'|'savings'|undefined)??'bank')
+  const [accountCurrency,setAccountCurrency]=useState(account?.currency??baseCurrency)
   const [openingDate,setOpeningDate]=useState(account?.initial_balance_date??todayISO())
   const [categoryKind,setCategoryKind]=useState<'income'|'expense'>((category?.kind??category?.type??'expense') as 'income'|'expense')
   const [monthlyEstimate,setMonthlyEstimate]=useState(category?.monthly_estimate??false)
   const client=useQueryClient()
   const save=useMutation({mutationFn:()=>item
     ? api(`/${kind}/${item.id}`,{method:'PATCH',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,version:itemVersion(item)}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{monthly_estimate:monthlyEstimate}:{}),version:itemVersion(item)})})
-    : api(`/${kind}`,{method:'POST',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,initial_balance_minor:parseMoney(extra||'0'),initial_balance_date:openingDate}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{kind:categoryKind,monthly_estimate:monthlyEstimate}:{})})}),
+    : api(`/${kind}`,{method:'POST',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,currency:accountCurrency,initial_balance_minor:parseMoney(extra||'0',accountCurrency),initial_balance_date:openingDate}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{kind:categoryKind,monthly_estimate:monthlyEstimate}:{})})}),
     onSuccess:()=>{client.invalidateQueries({queryKey:[kind]});client.invalidateQueries({queryKey:['forecast']});client.invalidateQueries({queryKey:['analytics']});onClose()},
   })
-  const dirty=name!==(item?.name??'')||(kind==='accounts'?accountType!==(account?.type??'bank'):extra!==(item&&'color'in item?item.color??'#557a5d':''))||(kind==='categories'&&monthlyEstimate!==(category?.monthly_estimate??false))
+  const dirty=name!==(item?.name??'')||(kind==='accounts'?accountType!==(account?.type??'bank')||accountCurrency!==(account?.currency??'RUB'):extra!==(item&&'color'in item?item.color??'#557a5d':''))||(kind==='categories'&&monthlyEstimate!==(category?.monthly_estimate??false))
   const close=()=>{if(!dirty||window.confirm('Закрыть форму и потерять несохранённые изменения?'))onClose()}
   return <Modal title={item?`Изменить «${item.name}»`:'Новая запись'} onClose={close}><div className="form-stack">
     <Field label="Название"><Input autoFocus value={name} onChange={(e)=>setName(e.target.value)}/></Field>
     {kind==='accounts' ? <>
       <Field label="Тип счёта"><Select value={accountType} onChange={(e)=>setAccountType(e.target.value as typeof accountType)}><option value="bank">Банковский счёт / карта</option><option value="cash">Наличные</option><option value="savings">Накопительный счёт</option></Select></Field>
-      {!item&&<><Field label="Начальный остаток"><Input value={extra} onChange={(e)=>setExtra(e.target.value)} placeholder="0,00"/></Field><Field label="Остаток на начало даты"><Input type="date" value={openingDate} onChange={(e)=>setOpeningDate(e.target.value)}/></Field></>}
+      <Field label="Валюта счёта" hint={item?'Валюту существующего счёта нельзя изменить':'Остаток и операции по счёту будут в этой валюте'}><CurrencySelect value={accountCurrency} onChange={setAccountCurrency} disabled={Boolean(item)}/></Field>
+      {!item&&<><Field label={`Начальный остаток, ${accountCurrency}`}><Input value={extra} onChange={(e)=>setExtra(e.target.value)} placeholder="0,00"/></Field><Field label="Остаток на начало даты"><Input type="date" value={openingDate} onChange={(e)=>setOpeningDate(e.target.value)}/></Field></>}
     </> : <>
       {kind==='categories' && <Field label="Тип категории" hint={item?'Тип существующей категории нельзя изменить':undefined}><Select value={categoryKind} disabled={Boolean(item)} onChange={(e)=>{setCategoryKind(e.target.value as typeof categoryKind);if(e.target.value==='income')setMonthlyEstimate(false)}}><option value="expense">Расход</option><option value="income">Доход</option></Select></Field>}
       <Field label="Цвет"><Input type="color" value={extra||'#557a5d'} onChange={(e)=>setExtra(e.target.value)}/></Field>

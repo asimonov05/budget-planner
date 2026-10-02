@@ -126,19 +126,19 @@
       "x": 685,
       "y": -552,
       "width": 1095,
-      "height": 1772,
+      "height": 1802,
       "points": [
         [
           1095,
-          1772
+          1802
         ],
         [
           1095,
-          1752
+          1782
         ],
         [
           895,
-          1752
+          1782
         ],
         [
           895,
@@ -1199,13 +1199,13 @@
       "id": "rel-tx-account",
       "type": "arrow",
       "x": 1850,
-      "y": 479,
+      "y": 498,
       "width": 0,
-      "height": 171,
+      "height": 152,
       "points": [
         [
           0,
-          171
+          152
         ],
         [
           0,
@@ -1396,13 +1396,13 @@
       "id": "rel-txtag-tx",
       "type": "arrow",
       "x": 1850,
-      "y": 1154,
+      "y": 1211,
       "width": 0,
-      "height": 66,
+      "height": 39,
       "points": [
         [
           0,
-          66
+          39
         ],
         [
           0,
@@ -1680,13 +1680,13 @@
       "id": "rel-pitag-plan",
       "type": "arrow",
       "x": 2600,
-      "y": 1154,
+      "y": 1173,
       "width": 0,
-      "height": 66,
+      "height": 47,
       "points": [
         [
           0,
-          66
+          47
         ],
         [
           0,
@@ -1715,7 +1715,7 @@
       "x": 1360,
       "y": 1160,
       "width": 1110,
-      "height": 110,
+      "height": 230,
       "points": [
         [
           1110,
@@ -1727,14 +1727,14 @@
         ],
         [
           940,
-          20
+          230
         ],
         [
-          40,
-          20
+          220,
+          230
         ],
         [
-          40,
+          220,
           0
         ],
         [
@@ -1762,25 +1762,25 @@
       "id": "rel-override-plan",
       "type": "arrow",
       "x": 2300,
-      "y": 1154,
+      "y": 1170,
       "width": 120,
-      "height": 266,
+      "height": 250,
       "points": [
         [
           100,
-          266
+          250
         ],
         [
           0,
-          266
+          250
         ],
         [
           0,
-          16
+          0
         ],
         [
           120,
-          0
+          3
         ]
       ],
       "strokeColor": "#5c940d",
@@ -1844,29 +1844,29 @@
       "id": "rel-planmatch-tx",
       "type": "arrow",
       "x": 2130,
-      "y": 1154,
+      "y": 1200,
       "width": 870,
-      "height": 546,
+      "height": 500,
       "points": [
         [
           870,
-          508
+          462
         ],
         [
           870,
-          546
+          500
         ],
         [
           70,
-          546
+          500
         ],
         [
           70,
-          46
+          0
         ],
         [
           0,
-          0
+          11
         ]
       ],
       "strokeColor": "#5c940d",
@@ -1889,28 +1889,28 @@
       "id": "rel-budget-category",
       "type": "arrow",
       "x": 540,
-      "y": 470,
-      "width": 1560,
-      "height": 1150,
+      "y": 517,
+      "width": 1760,
+      "height": 1103,
       "points": [
         [
           110,
-          1150
+          1103
         ],
         [
           0,
-          1150
+          1103
         ],
         [
           0,
-          30
+          13
         ],
         [
-          1560,
-          30
+          1760,
+          13
         ],
         [
-          1560,
+          1760,
           0
         ]
       ],
@@ -2012,29 +2012,29 @@
       "id": "rel-movement-tx",
       "type": "arrow",
       "x": 2130,
-      "y": 1154,
+      "y": 1200,
       "width": 1320,
-      "height": 546,
+      "height": 500,
       "points": [
         [
           1320,
-          525
+          479
         ],
         [
           1320,
-          546
+          500
         ],
         [
           70,
-          546
+          500
         ],
         [
           70,
-          46
+          0
         ],
         [
           0,
-          0
+          11
         ]
       ],
       "strokeColor": "#495057",
@@ -2288,7 +2288,7 @@
         ],
         [
           0,
-          212
+          269
         ]
       ],
       "strokeColor": "#495057",
@@ -2697,7 +2697,7 @@
       "x": 1600,
       "y": 200,
       "width": 310,
-      "height": 279,
+      "height": 298,
       "strokeColor": "#1971c2",
       "backgroundColor": "#e3fafc",
       "fillStyle": "solid",
@@ -2705,23 +2705,23 @@
       "roundness": {
         "type": 3
       },
-      "version": 2
+      "version": 3
     },
     {
       "id": "txt-accounts",
       "type": "text",
       "x": 1618,
       "y": 217,
-      "text": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "text": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ncurrency: varchar(3)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "originalText": "ACCOUNTS\n────────────\nPK  id: integer\nname: varchar(120)\ntype: varchar(24)\ncurrency: varchar(3)\ninitial_balance_minor: money\ninitial_balance_date: date\narchived: bool\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "autoResize": false,
       "lineHeight": 1.25,
       "width": 259,
-      "height": 245,
+      "height": 264,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2734,7 +2734,7 @@
       "frameId": null,
       "roundness": null,
       "seed": 9108,
-      "version": 2,
+      "version": 3,
       "versionNonce": 9108,
       "isDeleted": false,
       "boundElements": null,
@@ -2853,7 +2853,7 @@
       "x": 1700,
       "y": 650,
       "width": 525,
-      "height": 504,
+      "height": 561,
       "strokeColor": "#7048e8",
       "backgroundColor": "#e5dbff",
       "fillStyle": "solid",
@@ -2861,23 +2861,23 @@
       "roundness": {
         "type": 3
       },
-      "version": 2
+      "version": 3
     },
     {
       "id": "txt-transactions",
       "type": "text",
       "x": 1718,
       "y": 667,
-      "text": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
+      "text": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nmerchant_currency: varchar(3)?\nmerchant_amount_minor: money?\nmerchant_exchange_rate: numeric(24, 12)?\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
+      "originalText": "TRANSACTIONS\n────────────────\nPK  id: integer\nIX  type: varchar(16)\namount_minor: money\nmerchant_currency: varchar(3)?\nmerchant_amount_minor: money?\nmerchant_exchange_rate: numeric(24, 12)?\nIX  date: date\nFK/IX  account_id: integer\nFK/IX  category_id: integer?\nFK/IX  goal_id: integer?\nFK/IX  loan_id: integer?\nprincipal_component_minor: money?\ninterest_component_minor: money?\nprepayment_strategy: varchar(24)?\nloan_balance_applied: bool?\ndescription: varchar(300)\ncomment: text?\nexternal_source: varchar(80)?\nexternal_id: varchar(160)?\nFK  import_batch_id: integer?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, external_source, account_id, external_id)\nUQ(user_id, id)",
       "autoResize": false,
       "lineHeight": 1.25,
       "width": 489,
-      "height": 470,
+      "height": 527,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2890,7 +2890,7 @@
       "frameId": null,
       "roundness": null,
       "seed": 9111,
-      "version": 2,
+      "version": 3,
       "versionNonce": 9111,
       "isDeleted": false,
       "boundElements": null,
@@ -2903,7 +2903,7 @@
       "id": "tbl-transaction-tags",
       "type": "rectangle",
       "x": 1750,
-      "y": 1220,
+      "y": 1250,
       "width": 314,
       "height": 129,
       "strokeColor": "#7048e8",
@@ -2919,7 +2919,7 @@
       "id": "txt-transaction-tags",
       "type": "text",
       "x": 1768,
-      "y": 1237,
+      "y": 1267,
       "text": "TRANSACTION_TAGS\n────────────────────\nPK/FK  transaction_id: integer\nPK/FK  tag_id: integer\nFK/IX  user_id: integer",
       "fontSize": 15,
       "fontFamily": 3,
@@ -2957,7 +2957,7 @@
       "x": 1200,
       "y": 1346,
       "width": 360,
-      "height": 279,
+      "height": 317,
       "strokeColor": "#7048e8",
       "backgroundColor": "#e5dbff",
       "fillStyle": "solid",
@@ -2965,23 +2965,23 @@
       "roundness": {
         "type": 3
       },
-      "version": 2
+      "version": 3
     },
     {
       "id": "txt-transfers",
       "type": "text",
       "x": 1218,
       "y": 1363,
-      "text": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "text": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nto_amount_minor: money\nexchange_rate: numeric(24, 12)\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "originalText": "TRANSFERS\n─────────────\nPK  id: integer\nFK/IX  from_account_id: integer\nFK/IX  to_account_id: integer\namount_minor: money\nto_amount_minor: money\nexchange_rate: numeric(24, 12)\nIX  date: date\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "autoResize": false,
       "lineHeight": 1.25,
       "width": 287,
-      "height": 245,
+      "height": 283,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -2994,7 +2994,7 @@
       "frameId": null,
       "roundness": null,
       "seed": 9113,
-      "version": 2,
+      "version": 3,
       "versionNonce": 9113,
       "isDeleted": false,
       "boundElements": null,
@@ -3061,7 +3061,7 @@
       "x": 2400,
       "y": 650,
       "width": 420,
-      "height": 504,
+      "height": 523,
       "strokeColor": "#f08c00",
       "backgroundColor": "#fff3bf",
       "fillStyle": "solid",
@@ -3069,23 +3069,23 @@
       "roundness": {
         "type": 3
       },
-      "version": 2
+      "version": 3
     },
     {
       "id": "txt-plan-items",
       "type": "text",
       "x": 2418,
       "y": 667,
-      "text": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "text": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\ncurrency: varchar(3)\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "fontSize": 15,
       "fontFamily": 3,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
+      "originalText": "PLAN_ITEMS\n──────────────\nPK  id: integer\nIX  kind: varchar(16)\ntitle: varchar(200)\namount_minor: money\ncurrency: varchar(3)\nIX  date: date?\nIX  month: varchar(7)?\nrecurrence: varchar(16)\nstart_date: date?\nend_date: date?\ncertainty: varchar(16)\nstatus: varchar(16)\nFK  account_id: integer?\nFK  category_id: integer?\nFK  goal_id: integer?\nFK/IX  loan_id: integer?\nfunding_source: varchar(16)\nrequired: bool\ncomment: text?\nFK/IX  user_id: integer\ncreated_at: datetime\nupdated_at: datetime\nversion: integer\nUQ(user_id, id)",
       "autoResize": false,
       "lineHeight": 1.25,
       "width": 250,
-      "height": 470,
+      "height": 489,
       "angle": 0,
       "strokeColor": "#343a40",
       "backgroundColor": "transparent",
@@ -3098,7 +3098,7 @@
       "frameId": null,
       "roundness": null,
       "seed": 9115,
-      "version": 2,
+      "version": 3,
       "versionNonce": 9115,
       "isDeleted": false,
       "boundElements": null,

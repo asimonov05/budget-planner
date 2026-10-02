@@ -24,6 +24,8 @@ def validate_references(db: Session, body: SalaryRuleCreate, *, allow_archived: 
     account = db.get(Account, body.account_id) if body.account_id else None
     if not account or (account.archived and not allow_archived):
         raise HTTPException(status_code=422, detail="Choose an active salary account")
+    if account.currency != "RUB":
+        raise HTTPException(status_code=422, detail="Расчёт зарплаты требует рублёвый счёт")
     if body.category_id is not None:
         category = db.get(Category, body.category_id)
         if not category or (category.archived and not allow_archived) or category.kind != "income":

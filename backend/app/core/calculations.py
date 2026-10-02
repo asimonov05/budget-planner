@@ -24,6 +24,7 @@ from ..models import (
     PlanMatch,
     PlanOverride,
     Transaction,
+    Transfer,
 )
 from .loans import PaymentRow, monthly_dates, project_loan
 from .salary_projection import projected_salary_payments
@@ -182,6 +183,7 @@ class MonthResult:
     goal_expenses: int = 0
     goal_refunds: int = 0
     adjustments: int = 0
+    transfer_delta_minor: int = 0
     c_end: int = 0
     r_end: int = 0
     f_end: int = 0
@@ -198,24 +200,31 @@ def calculate_forecast(
     include_possible: bool = False,
     *,
     as_of: date | None = None,
+    currency: str | None = None,
 ) -> dict:
     requested = [add_months(from_month, i) for i in range(months)]
-    accounts = db.scalars(select(Account)).all()
-    if not accounts:
-        return {"from_month": from_month, "months": [], "warnings": ["no_accounts"]}
     settings = settings_for_user(db)
+    selected_currency = currency or (settings.currency if settings else "RUB")
+    accounts = db.scalars(select(Account).where(Account.currency == selected_currency)).all()
+    has_plans = db.scalar(select(func.count(PlanItem.id)).where(PlanItem.currency == selected_currency))
+    if not accounts and not has_plans:
+        return {"from_month": from_month, "currency": selected_currency, "months": [], "warnings": ["no_accounts"]}
+    account_start_month = min(
+        (month_key(account.initial_balance_date) for account in accounts),
+        default=month_key(settings.accounting_start_date) if settings else from_month,
+    )
     current_month = app_current_month(settings, as_of)
     reserve_start_month = (
         month_key(settings.accounting_start_date)
         if settings
-        else min(month_key(account.initial_balance_date) for account in accounts)
+        else account_start_month
     )
     history_start_month = max(
         reserve_start_month,
-        min(month_key(account.initial_balance_date) for account in accounts),
+        account_start_month,
     )
     first_month = min(
-        min(month_key(account.initial_balance_date) for account in accounts),
+        account_start_month,
         reserve_start_month,
         from_month,
     )
@@ -244,7 +253,9 @@ def calculate_forecast(
         .where(
             Transaction.date >= date.fromisoformat(f"{first_month}-01"),
             Transaction.date < date.fromisoformat(f"{add_months(through, 1)}-01"),
+            Account.currency == selected_currency,
         )
+        .join(Account, Account.id == Transaction.account_id)
         .group_by(
             transaction_month,
             Transaction.type,
@@ -273,25 +284,26 @@ def calculate_forecast(
         for category in db.scalars(select(Category)).all()
         if category.kind == "expense" and category.monthly_estimate and not category.archived
     }
-    plan_items = db.scalars(select(PlanItem)).all()
+    plan_items = db.scalars(select(PlanItem).where(PlanItem.currency == selected_currency)).all()
     overrides = {(o.plan_item_id, o.month): o for o in db.scalars(select(PlanOverride)).all()}
     matches_by_occurrence: dict[tuple[int, str], list[PlanMatch]] = defaultdict(list)
     for match in db.scalars(select(PlanMatch)).all():
         matches_by_occurrence[(match.plan_item_id, match.occurrence_month)].append(match)
-    limits = db.scalars(select(BudgetLimit)).all()
+    is_base_currency = selected_currency == (settings.currency if settings else "RUB")
+    limits = db.scalars(select(BudgetLimit)).all() if is_base_currency else []
     limit_overrides = {
         (o.budget_limit_id, o.month): o.amount_minor
         for o in db.scalars(select(BudgetLimitOverride)).all()
     }
     movements_by_month: dict[str, list[GoalReserveMovement]] = defaultdict(list)
-    for movement in db.scalars(select(GoalReserveMovement)).all():
+    for movement in (db.scalars(select(GoalReserveMovement)).all() if is_base_currency else []):
         movements_by_month[month_key(movement.date)].append(movement)
-    goals = db.scalars(select(Goal)).all()
+    goals = db.scalars(select(Goal)).all() if is_base_currency else []
     closed = {
         m.month for m in db.scalars(select(BudgetMonth).where(BudgetMonth.status == "closed")).all()
     }
     salary_by_month: dict[str, list[dict]] = defaultdict(list)
-    if settings and settings.salary_enabled:
+    if settings and settings.salary_enabled and is_base_currency:
         for payout in projected_salary_payments(db, through):
             salary_by_month[month_key(payout["date"])].append(payout)
 
@@ -300,7 +312,7 @@ def calculate_forecast(
     introduced_accounts: set[int] = set()
     loan_items_by_month: dict[str, list[LoanScheduleItem]] = defaultdict(list)
     manual_loan_months: set[tuple[int, str]] = set()
-    for loan_item in db.scalars(select(LoanScheduleItem)).all():
+    for loan_item in (db.scalars(select(LoanScheduleItem)).all() if is_base_currency else []):
         due_month = month_key(loan_item.due_date)
         loan_items_by_month[due_month].append(loan_item)
         if loan_item.status != "cancelled":
@@ -308,7 +320,7 @@ def calculate_forecast(
     auto_loan_rows_by_month: dict[str, list[tuple[int, PaymentRow]]] = defaultdict(list)
     auto_loan_ids: set[int] = set()
     archived_loan_ids: set[int] = set()
-    for loan in db.scalars(select(Loan)).all():
+    for loan in (db.scalars(select(Loan)).all() if is_base_currency else []):
         if loan.archived:
             archived_loan_ids.add(loan.id)
             continue
@@ -335,6 +347,19 @@ def calculate_forecast(
         for row in projection.rows:
             auto_loan_rows_by_month[month_key(row.due_date)].append((loan.id, row))
     results: list[MonthResult] = []
+    account_ids = {account.id for account in accounts}
+    transfer_delta_by_month: dict[str, int] = defaultdict(int)
+    for transfer in db.scalars(
+        select(Transfer).where(
+            Transfer.date >= date.fromisoformat(f"{first_month}-01"),
+            Transfer.date < date.fromisoformat(f"{add_months(through, 1)}-01"),
+        )
+    ).all():
+        month = month_key(transfer.date)
+        if transfer.from_account_id in account_ids:
+            transfer_delta_by_month[month] -= transfer.amount_minor
+        if transfer.to_account_id in account_ids:
+            transfer_delta_by_month[month] += transfer.to_amount_minor
 
     for month in timeline:
         if month == reserve_start_month:
@@ -349,6 +374,13 @@ def calculate_forecast(
         result = MonthResult(
             month=month, c_start=c, r_start=r, f_start=c - r, closed=month in closed
         )
+        result.transfer_delta_minor = transfer_delta_by_month.get(month, 0)
+        if result.transfer_delta_minor:
+            result.details.append({
+                "source": "transfers",
+                "kind": "transfer",
+                "amount_minor": result.transfer_delta_minor,
+            })
         category_actual: dict[int, int] = defaultdict(int)
         category_ordinary_actual: dict[int, int] = defaultdict(int)
         category_expected: dict[int, int] = defaultdict(int)
@@ -566,7 +598,10 @@ def calculate_forecast(
                     ).__dict__
                 )
 
-        result.c_end = result.c_start + result.income - result.expense + result.adjustments
+        result.c_end = (
+            result.c_start + result.income - result.expense
+            + result.adjustments + result.transfer_delta_minor
+        )
         result.r_end = (
             result.r_start
             + result.goal_allocations
@@ -584,7 +619,7 @@ def calculate_forecast(
         warnings.append("negative_cash")
     if any(x.r_end < 0 for x in results):
         warnings.append("negative_reserve")
-    return {"from_month": from_month, "months": [x.__dict__ for x in results], "warnings": warnings}
+    return {"from_month": from_month, "currency": selected_currency, "months": [x.__dict__ for x in results], "warnings": warnings}
 
 
 def goal_reserved(db: Session, goal: Goal, through: date | None = None) -> int:

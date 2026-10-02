@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Self-hosted personal budget planner API"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "Babel==2.18.0",
     "fastapi==0.139.0",
     "starlette==0.50.0",
     "uvicorn[standard]==0.35.0",

@@ -5,7 +5,8 @@ ADR разделены на два слоя, чтобы бизнес-прави�
 
 ## Бизнес-решения
 
-- [ADR-001: валюты — временное ограничение одновалютной реализации](adr/business/ADR-001-currency.md)
+- [ADR-001: исходное ограничение одновалютной реализации](adr/business/ADR-001-currency.md)
+- [ADR-009: отдельные валютные остатки и фактический курс операции](adr/business/ADR-009-multicurrency.md)
 - [ADR-004: неопределённость не превращается в ложную точность](adr/business/ADR-004-uncertainty.md)
 - [ADR-005: совпадение не равно дублю](adr/business/ADR-005-duplicate-matching.md)
 - [ADR-006: закрытый месяц содержит факт](adr/business/ADR-006-closed-month.md)

@@ -38,6 +38,7 @@ from ..schemas import (
 )
 from ..security import get_db, require_csrf, require_user
 from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
+from ..application.currency import SUPPORTED_CURRENCIES
 
 
 router = APIRouter(tags=["catalog"])
@@ -103,6 +104,8 @@ def update_settings(
         db.scalar(select(func.count()).select_from(Account)) or 0
     )
     if "currency" in data:
+        if data["currency"] not in SUPPORTED_CURRENCIES:
+            raise HTTPException(status_code=422, detail="Unsupported currency")
         if has_financial_data and data["currency"] != value.currency:
             raise HTTPException(
                 status_code=409, detail="Currency cannot be renamed after financial data exists"
@@ -148,7 +151,7 @@ def account_balance(db: Session, account: Account, as_of: date) -> int:
         )
     ).all():
         total += (
-            transfer.amount_minor
+            transfer.to_amount_minor
             if transfer.to_account_id == account.id
             else -transfer.amount_minor
         )
@@ -169,18 +172,30 @@ def list_accounts(
     if not include_archived:
         statement = statement.where(Account.archived.is_(False))
     items = []
+    base_currency = settings.currency if settings else "RUB"
     for account in db.scalars(statement).all():
         item = AccountOut.model_validate(account).model_dump()
         item["current_balance_minor"] = account_balance(db, account, as_of)
         items.append(item)
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": len(items), "base_currency": base_currency}
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=201)
 def create_account(
     body: AccountCreate, _=Depends(require_csrf), db: Session = Depends(get_db)
 ) -> Account:
-    value = Account(**body.model_dump())
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    currency = body.currency or base_currency
+    if currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=422, detail="Unsupported currency")
+    value = Account(
+        name=body.name,
+        type=body.type,
+        currency=currency,
+        initial_balance_minor=body.initial_balance_minor,
+        initial_balance_date=body.initial_balance_date,
+    )
     db.add(value)
     db.commit()
     db.refresh(value)

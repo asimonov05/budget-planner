@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
@@ -71,6 +72,8 @@ from ..schemas import (
 )
 from ..security import get_db, require_csrf, require_user
 from ..core.tenant import budget_month_for_user, settings_for_user
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, effective_rate, positive_rate
+from ..infrastructure.cbr_rates import RateUnavailable, daily_rates
 
 
 router = APIRouter(tags=["finance"])
@@ -118,18 +121,37 @@ def month_date(value: str) -> date:
 
 
 def cash_balance_through(db: Session, through: date) -> int:
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    base_account_ids = {
+        account.id for account in db.scalars(select(Account)).all()
+        if account.currency == base_currency
+    }
     cash = sum(
         account.initial_balance_minor
         for account in db.scalars(
-            select(Account).where(Account.initial_balance_date <= through)
+            select(Account).where(
+                Account.initial_balance_date <= through,
+                Account.currency == base_currency,
+            )
         ).all()
     )
-    for transaction in db.scalars(select(Transaction).where(Transaction.date <= through)).all():
+    for transaction in db.scalars(
+        select(Transaction).where(
+            Transaction.date <= through,
+            Transaction.account_id.in_(base_account_ids),
+        )
+    ).all():
         cash += (
             transaction.amount_minor
             if transaction.type in ("income", "refund", "adjustment")
             else -transaction.amount_minor
         )
+    for transfer in db.scalars(select(Transfer).where(Transfer.date <= through)).all():
+        if transfer.from_account_id in base_account_ids:
+            cash -= transfer.amount_minor
+        if transfer.to_account_id in base_account_ids:
+            cash += transfer.to_amount_minor
     return cash
 
 
@@ -143,6 +165,59 @@ def ensure_transaction_account_date(account: Account, value: date) -> None:
             status_code=422,
             detail="Transaction date cannot be before the account opening balance date",
         )
+
+
+def rate_for_entry(source: str, target: str, on_date: date, provided: str | None):
+    """Use the user's actual rate, otherwise an indicative CBR quote."""
+    try:
+        if source == target:
+            rate = positive_rate(provided or "1")
+            if rate != 1:
+                raise ValueError("Same-currency rate must be 1")
+            return rate
+        return positive_rate(provided or daily_rates(on_date).quote(source, target))
+    except RateUnavailable as exc:
+        raise HTTPException(status_code=422, detail="Укажите фактический курс вручную") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def merchant_details(
+    account_currency: str,
+    account_amount_minor: int,
+    transaction_type: str,
+    merchant_currency: str | None,
+    merchant_amount_minor: int | None,
+    merchant_exchange_rate: str | None,
+) -> tuple[str | None, int | None, Decimal | None]:
+    if merchant_currency is None and merchant_amount_minor is None and not merchant_exchange_rate:
+        return None, None, None
+    if transaction_type not in ("expense", "refund"):
+        raise HTTPException(status_code=422, detail="Валюта покупки доступна для расхода или возврата")
+    if not merchant_currency or merchant_amount_minor is None:
+        raise HTTPException(status_code=422, detail="Укажите валюту и сумму покупки")
+    try:
+        if merchant_currency == account_currency:
+            rate = positive_rate(merchant_exchange_rate or "1")
+            if rate != 1 or merchant_amount_minor != account_amount_minor:
+                raise ValueError("Для одной валюты сумма покупки должна совпадать со списанием")
+        else:
+            rate = (
+                positive_rate(merchant_exchange_rate)
+                if merchant_exchange_rate
+                else effective_rate(
+                    merchant_amount_minor, merchant_currency,
+                    account_amount_minor, account_currency,
+                )
+            )
+            converted = convert_minor(
+                merchant_amount_minor, merchant_currency, account_currency, rate
+            )
+            if abs(converted - account_amount_minor) > 1:
+                raise ValueError("Курс не соответствует сумме фактического списания")
+        return merchant_currency, merchant_amount_minor, rate
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def ensure_category_kind(db: Session, category_id: int | None, kind: str) -> None:
@@ -239,9 +314,13 @@ def list_transactions(
         match.transaction_id: match
         for match in (db.scalars(select(SalaryMatch).where(SalaryMatch.transaction_id.in_(page_ids))).all() if page_ids else [])
     }
+    account_currencies = {
+        account.id: account.currency for account in db.scalars(select(Account)).all()
+    }
     items = []
     for transaction in page:
         item = TransactionOut.model_validate(transaction).model_dump(mode="json")
+        item["account_currency"] = account_currencies.get(transaction.account_id)
         match = matches.get(transaction.id)
         if match:
             item.update(
@@ -282,6 +361,19 @@ def create_transaction(
     if not account:
         missing("Account")
     ensure_transaction_account_date(account, body.date)
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    merchant_currency, merchant_amount, merchant_rate = merchant_details(
+        account.currency, body.amount_minor, body.type,
+        body.merchant_currency, body.merchant_amount_minor, body.merchant_exchange_rate,
+    )
+    for key in ("merchant_currency", "merchant_amount_minor", "merchant_exchange_rate"):
+        body_data.pop(key)
+    body_data.update(
+        merchant_currency=merchant_currency,
+        merchant_amount_minor=merchant_amount,
+        merchant_exchange_rate=merchant_rate,
+    )
     if body.goal_id is not None:
         raise HTTPException(
             status_code=422,
@@ -299,6 +391,8 @@ def create_transaction(
         )
     loan = None
     if body.loan_id is not None:
+        if account.currency != base_currency:
+            raise HTTPException(status_code=422, detail="Кредитный платёж должен списываться со счёта в основной валюте")
         if body.type != "expense":
             raise HTTPException(status_code=422, detail="С кредитом можно связать только расход")
         loan = db.get(Loan, body.loan_id)
@@ -376,6 +470,29 @@ def update_transaction(
     if value.version != body.version:
         raise HTTPException(status_code=409, detail="Version conflict; reload and retry")
     data = body.model_dump(exclude_unset=True, exclude={"version"})
+    if "amount_minor" in data and data["amount_minor"] is None:
+        raise HTTPException(status_code=422, detail="Transaction amount cannot be null")
+    if "date" in data and data["date"] is None:
+        raise HTTPException(status_code=422, detail="Transaction date cannot be null")
+    account = db.get(Account, value.account_id)
+    if not account:
+        missing("Account")
+    amount = data.get("amount_minor", value.amount_minor)
+    merchant_fields = {"merchant_currency", "merchant_amount_minor", "merchant_exchange_rate"}
+    changed_merchant = bool(merchant_fields & data.keys())
+    merchant_currency = data.pop("merchant_currency", value.merchant_currency)
+    merchant_amount = data.pop("merchant_amount_minor", value.merchant_amount_minor)
+    merchant_rate_input = data.pop("merchant_exchange_rate", None)
+    if changed_merchant or ("amount_minor" in data and value.merchant_currency):
+        merchant_currency, merchant_amount, merchant_rate = merchant_details(
+            account.currency, amount, value.type,
+            merchant_currency, merchant_amount, merchant_rate_input,
+        )
+        data.update(
+            merchant_currency=merchant_currency,
+            merchant_amount_minor=merchant_amount,
+            merchant_exchange_rate=merchant_rate,
+        )
     linked_goal_movement = db.scalar(
         select(GoalReserveMovement).where(GoalReserveMovement.transaction_id == value.id)
     )
@@ -508,7 +625,22 @@ def create_transfer(
         missing("Account")
     ensure_transaction_account_date(source, body.date)
     ensure_transaction_account_date(target, body.date)
-    value = Transfer(**body.model_dump())
+    rate = rate_for_entry(source.currency, target.currency, body.date, body.exchange_rate)
+    try:
+        credited = convert_minor(body.amount_minor, source.currency, target.currency, rate)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if credited <= 0:
+        raise HTTPException(status_code=422, detail="Сумма зачисления после конвертации должна быть положительной")
+    value = Transfer(
+        from_account_id=body.from_account_id,
+        to_account_id=body.to_account_id,
+        amount_minor=body.amount_minor,
+        to_amount_minor=credited,
+        exchange_rate=rate,
+        date=body.date,
+        comment=body.comment,
+    )
     db.add(value)
     db.flush()
     output = TransferOut.model_validate(value).model_dump(mode="json")
@@ -552,8 +684,29 @@ def update_transfer(
     ensure_open(db, transfer_date)
     ensure_transaction_account_date(source, transfer_date)
     ensure_transaction_account_date(target, transfer_date)
+    rate = rate_for_entry(
+        source.currency,
+        target.currency,
+        transfer_date,
+        data.get("exchange_rate") or (
+            str(value.exchange_rate)
+            if source_id == value.from_account_id and target_id == value.to_account_id
+            else None
+        ),
+    )
+    amount = data.get("amount_minor", value.amount_minor)
+    try:
+        credited = convert_minor(amount, source.currency, target.currency, rate)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if credited <= 0:
+        raise HTTPException(status_code=422, detail="Сумма зачисления после конвертации должна быть положительной")
     for key, val in data.items():
+        if key == "exchange_rate":
+            continue
         setattr(value, key, val)
+    value.exchange_rate = rate
+    value.to_amount_minor = credited
     value.version += 1
     db.commit()
     db.refresh(value)
@@ -617,8 +770,19 @@ def list_plan_items(
 def create_plan_item(body: PlanItemCreate, _=Depends(require_csrf), db: Session = Depends(get_db)):
     data = body.model_dump()
     tag_ids = data.pop("tag_ids")
-    if body.account_id and not db.get(Account, body.account_id):
+    account = db.get(Account, body.account_id) if body.account_id else None
+    if body.account_id and not account:
         missing("Account")
+    settings = settings_for_user(db)
+    base_currency = settings.currency if settings else "RUB"
+    currency = body.currency or (account.currency if account else base_currency)
+    if currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=422, detail="Unsupported currency")
+    if account and account.currency != currency:
+        raise HTTPException(status_code=422, detail="Валюта плана должна совпадать с валютой счёта")
+    if (body.goal_id or body.loan_id or body.funding_source == "goal") and currency != base_currency:
+        raise HTTPException(status_code=422, detail="Цели и кредиты пока учитываются в основной валюте")
+    data["currency"] = currency
     ensure_category_kind(db, body.category_id, body.kind)
     if body.goal_id and not db.get(Goal, body.goal_id):
         missing("Goal")
@@ -694,8 +858,12 @@ def update_plan_item(
                     "tags or status can be changed"
                 ),
             )
-    if data.get("account_id") and not db.get(Account, data["account_id"]):
-        missing("Account")
+    if data.get("account_id"):
+        account = db.get(Account, data["account_id"])
+        if not account:
+            missing("Account")
+        if account.currency != value.currency:
+            raise HTTPException(status_code=422, detail="Валюта нового счёта должна совпадать с валютой плана")
     if data.get("loan_id") is not None:
         loan = db.get(Loan, data["loan_id"])
         if not loan:
@@ -847,6 +1015,9 @@ def match_plan(
     expected_transaction_type = "income" if plan.kind == "income" else "expense"
     if transaction.type != expected_transaction_type:
         raise HTTPException(status_code=422, detail="Transaction type does not match plan item")
+    account = db.get(Account, transaction.account_id)
+    if not account or account.currency != plan.currency:
+        raise HTTPException(status_code=422, detail="Валюта операции не совпадает с валютой плана")
     if transaction.external_source and transaction.external_source.startswith("loan_schedule:"):
         raise HTTPException(
             status_code=422,
@@ -1017,7 +1188,10 @@ def create_goal(body: GoalCreate, _=Depends(require_csrf), db: Session = Depends
     opening_cash = sum(
         account.initial_balance_minor
         for account in db.scalars(
-            select(Account).where(Account.initial_balance_date <= accounting_start)
+            select(Account).where(
+                Account.initial_balance_date <= accounting_start,
+                Account.currency == (settings.currency if settings else "RUB"),
+            )
         ).all()
     )
     opening_reserved = sum(goal.initial_reserved_minor for goal in db.scalars(select(Goal)).all())
@@ -1216,6 +1390,9 @@ def move_goal_reserve(
         account = db.get(Account, body.account_id)
         if not account:
             missing("Account")
+        settings = settings_for_user(db)
+        if account.currency != (settings.currency if settings else "RUB"):
+            raise HTTPException(status_code=422, detail="Операции с резервом цели требуют счёт в основной валюте")
         ensure_transaction_account_date(account, body.date)
         ensure_category_kind(db, body.category_id, "expense")
         tx = Transaction(
@@ -1365,8 +1542,13 @@ def configure_loan_schedule(loan: Loan) -> None:
 
 @router.post("/loans", response_model=LoanOut, status_code=201)
 def create_loan(body: LoanCreate, _=Depends(require_csrf), db: Session = Depends(get_db)):
-    if body.account_id and not db.get(Account, body.account_id):
-        missing("Account")
+    if body.account_id:
+        account = db.get(Account, body.account_id)
+        if not account:
+            missing("Account")
+        settings = settings_for_user(db)
+        if account.currency != (settings.currency if settings else "RUB"):
+            raise HTTPException(status_code=422, detail="Кредитный счёт должен быть в основной валюте")
     if body.start_date and body.end_date and body.end_date < body.start_date:
         raise HTTPException(status_code=422, detail="end_date cannot precede start_date")
     value = Loan(**body.model_dump())
@@ -1410,8 +1592,12 @@ def update_loan(
                 detail="Loan has remaining scheduled payments; pay or cancel them before archiving",
             )
     if "account_id" in data and data["account_id"] is not None:
-        if not db.get(Account, data["account_id"]):
+        account = db.get(Account, data["account_id"])
+        if not account:
             missing("Account")
+        settings = settings_for_user(db)
+        if account.currency != (settings.currency if settings else "RUB"):
+            raise HTTPException(status_code=422, detail="Кредитный счёт должен быть в основной валюте")
     start_date = data.get("start_date", value.start_date)
     end_date = data.get("end_date", value.end_date)
     if start_date and end_date and end_date < start_date:
@@ -1685,6 +1871,9 @@ def pay_loan_schedule_item(
     account = db.get(Account, account_id)
     if not account:
         missing("Account")
+    settings = settings_for_user(db)
+    if account.currency != (settings.currency if settings else "RUB"):
+        raise HTTPException(status_code=422, detail="Кредитный платёж требует счёт в основной валюте")
     ensure_transaction_account_date(account, body.date)
     ensure_category_kind(db, body.category_id, "expense")
     if body.principal_minor is not None and loan.principal_minor is not None:
@@ -1746,6 +1935,10 @@ def link_existing_loan_transaction(
         missing("Loan")
     if not transaction:
         missing("Transaction")
+    settings = settings_for_user(db)
+    account = db.get(Account, transaction.account_id)
+    if not account or account.currency != (settings.currency if settings else "RUB"):
+        raise HTTPException(status_code=422, detail="Кредитный платёж должен быть в основной валюте бюджета")
     if (
         loan.archived
         or transaction.type != "expense"
@@ -1893,10 +2086,13 @@ def forecast(
     from_month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     months: int = Query(12, ge=1, le=120),
     include_possible: bool = False,
+    currency: str | None = Query(None, pattern=r"^[A-Z]{3}$"),
     _=Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    return calculate_forecast(db, from_month, months, include_possible)
+    if currency is not None and currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=422, detail="Unsupported currency")
+    return calculate_forecast(db, from_month, months, include_possible, currency=currency)
 
 
 @router.get("/reports/monthly")
@@ -1904,7 +2100,10 @@ def monthly_report(
     from_month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     months: int = Query(12, ge=1, le=120),
     include_possible: bool = False,
+    currency: str | None = Query(None, pattern=r"^[A-Z]{3}$"),
     _=Depends(require_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    return calculate_forecast(db, from_month, months, include_possible)
+    if currency is not None and currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=422, detail="Unsupported currency")
+    return calculate_forecast(db, from_month, months, include_possible, currency=currency)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date as DateType, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -125,6 +126,7 @@ class SalaryMatchCreate(BaseModel):
 class AccountCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     type: Literal["cash", "bank", "savings"] = "bank"
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     initial_balance_minor: int = Field(ge=-MAX_SAFE_INTEGER, le=MAX_SAFE_INTEGER)
     initial_balance_date: DateType
 
@@ -139,6 +141,7 @@ class AccountOut(ORMModel):
     id: int
     name: str
     type: str
+    currency: str
     initial_balance_minor: int
     initial_balance_date: DateType
     archived: bool
@@ -201,6 +204,9 @@ class TagOut(ORMModel):
 class TransactionCreate(BaseModel):
     type: Literal["income", "expense", "refund", "adjustment"]
     amount_minor: int = Field(ge=-MAX_SAFE_INTEGER, le=MAX_SAFE_INTEGER)
+    merchant_currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    merchant_amount_minor: int | None = Field(None, gt=0, le=MAX_SAFE_INTEGER)
+    merchant_exchange_rate: str | None = None
     date: DateType
     account_id: int
     category_id: int | None = None
@@ -227,6 +233,9 @@ class TransactionCreate(BaseModel):
 
 class TransactionUpdate(VersionedUpdate):
     amount_minor: int | None = Field(None, ge=-MAX_SAFE_INTEGER, le=MAX_SAFE_INTEGER)
+    merchant_currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
+    merchant_amount_minor: int | None = Field(None, gt=0, le=MAX_SAFE_INTEGER)
+    merchant_exchange_rate: str | None = None
     date: DateType | None = None
     category_id: int | None = None
     description: str | None = Field(None, max_length=300)
@@ -244,6 +253,10 @@ class TransactionOut(ORMModel):
     id: int
     type: str
     amount_minor: int
+    merchant_currency: str | None
+    merchant_amount_minor: int | None
+    merchant_exchange_rate: Decimal | None
+    account_currency: str | None = None
     date: DateType
     account_id: int
     category_id: int | None
@@ -272,6 +285,7 @@ class TransferCreate(BaseModel):
     from_account_id: int
     to_account_id: int
     amount_minor: int = Field(gt=0, le=MAX_SAFE_INTEGER)
+    exchange_rate: str | None = None
     date: DateType
     comment: str | None = Field(None, max_length=4000)
 
@@ -286,6 +300,7 @@ class TransferUpdate(VersionedUpdate):
     from_account_id: int | None = Field(None, ge=1)
     to_account_id: int | None = Field(None, ge=1)
     amount_minor: int | None = Field(None, gt=0, le=MAX_SAFE_INTEGER)
+    exchange_rate: str | None = None
     date: DateType | None = None
     comment: str | None = Field(None, max_length=4000)
 
@@ -295,6 +310,8 @@ class TransferOut(ORMModel):
     from_account_id: int
     to_account_id: int
     amount_minor: int
+    to_amount_minor: int
+    exchange_rate: Decimal
     date: DateType
     comment: str | None
     version: int
@@ -304,6 +321,7 @@ class PlanItemCreate(BaseModel):
     kind: Literal["income", "expense"]
     title: str = Field(min_length=1, max_length=200)
     amount_minor: int = Field(ge=0, le=MAX_SAFE_INTEGER)
+    currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     date: DateType | None = None
     month: str | None = Field(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     recurrence: Literal["none", "monthly", "yearly"] = "none"
@@ -350,6 +368,7 @@ class PlanItemOut(ORMModel):
     kind: str
     title: str
     amount_minor: int
+    currency: str
     date: DateType | None
     month: str | None
     recurrence: str

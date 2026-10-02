@@ -102,7 +102,7 @@ def test_salary_archive_roundtrip_and_old_export_compatibility(client, auth, acc
     db.commit()
     imported = client.post("/api/v1/imports/project", files={"file": ("budget.zip", exported.content, "application/zip")}, headers=auth)
     assert imported.status_code == 200, imported.text
-    assert imported.json()["schema_version"] == 5
+    assert imported.json()["schema_version"] == 6
     assert client.get("/api/v1/forecast", params={"from_month": "2026-03", "months": 2}).json() == before
     assert db.scalar(select(SalaryRule)) is not None
     assert db.scalar(select(SalaryMatch)) is not None

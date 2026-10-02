@@ -1,7 +1,7 @@
 export type ID = string | number
 
 export interface User { id?: ID; username: string; display_name?: string; is_admin?: boolean; debug_admin_enabled?: boolean }
-export interface Account { id: ID; name: string; type?: string; balance_minor?: number; current_balance_minor?: number; initial_balance_minor?: number; initial_balance_date?: string; archived?: boolean; version?: number }
+export interface Account { id: ID; name: string; type?: string; currency?: string; balance_minor?: number; current_balance_minor?: number; initial_balance_minor?: number; initial_balance_date?: string; archived?: boolean; version?: number }
 export interface Category { id: ID; name: string; color?: string; kind?: 'income' | 'expense'; type?: 'income' | 'expense'; monthly_estimate?: boolean; archived?: boolean; version?: number }
 export interface Tag { id: ID; name: string; color?: string; archived?: boolean; version?: number }
 export interface Income {
@@ -21,9 +21,12 @@ export interface Transaction {
   matched_plan_item_id?: ID | null; matched_occurrence_month?: string | null;
   matched_amount_minor?: number | null; match_completed?: boolean | null; category_id?: ID | null; version?: number
   matched_salary_rule_id?: ID | null; matched_salary_earning_month?: string | null; matched_salary_component?: string | null
+  account_currency?: string | null; merchant_currency?: string | null; merchant_amount_minor?: number | null;
+  merchant_exchange_rate?: string | number | null
 }
 export interface Transfer {
-  id: ID; from_account_id: ID; to_account_id: ID; amount_minor: number; date: string; comment?: string; version?: number
+  id: ID; from_account_id: ID; to_account_id: ID; amount_minor: number; to_amount_minor?: number;
+  exchange_rate?: string | number; date: string; comment?: string; version?: number
 }
 export interface Loan {
   id: ID; name: string; creditor?: string; principal_minor?: number; principal_as_of?: string; account_id?: ID;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -21,6 +23,10 @@ from .db import Base
 
 
 MONEY_TYPE = BigInteger().with_variant(Integer, "sqlite")
+
+
+def transfer_target_default(context) -> int:
+    return context.get_current_parameters().get("amount_minor") or 0
 
 
 def utcnow() -> datetime:
@@ -93,6 +99,7 @@ class Account(Base, TenantMixin, TimestampVersionMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     type: Mapped[str] = mapped_column(String(24), default="bank")
+    currency: Mapped[str] = mapped_column(String(3), default="RUB", server_default="RUB")
     initial_balance_minor: Mapped[int] = mapped_column(MONEY_TYPE, default=0)
     initial_balance_date: Mapped[date] = mapped_column(Date)
     archived: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -141,6 +148,9 @@ class Transaction(Base, TenantMixin, TimestampVersionMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(16), index=True)
     amount_minor: Mapped[int] = mapped_column(MONEY_TYPE)
+    merchant_currency: Mapped[str | None] = mapped_column(String(3))
+    merchant_amount_minor: Mapped[int | None] = mapped_column(MONEY_TYPE)
+    merchant_exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 12))
     date: Mapped[date] = mapped_column(Date, index=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), index=True)
@@ -166,6 +176,10 @@ class Transaction(Base, TenantMixin, TimestampVersionMixin):
             "(type = 'adjustment' AND amount_minor <> 0) "
             "OR (type <> 'adjustment' AND amount_minor > 0)"
         ),
+        CheckConstraint(
+            "merchant_exchange_rate IS NULL OR merchant_exchange_rate > 0",
+            name="ck_transactions_merchant_rate_positive",
+        ),
         UniqueConstraint(
             "user_id", "external_source", "account_id", "external_id", name="uq_transaction_external"
         ),
@@ -186,10 +200,16 @@ class Transfer(Base, TenantMixin, TimestampVersionMixin):
     from_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     to_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     amount_minor: Mapped[int] = mapped_column(MONEY_TYPE)
+    to_amount_minor: Mapped[int] = mapped_column(MONEY_TYPE, default=transfer_target_default)
+    exchange_rate: Mapped[Decimal] = mapped_column(
+        Numeric(24, 12), default=Decimal(1), server_default="1"
+    )
     date: Mapped[date] = mapped_column(Date, index=True)
     comment: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
         CheckConstraint("amount_minor > 0"),
+        CheckConstraint("to_amount_minor > 0", name="ck_transfers_to_amount_positive"),
+        CheckConstraint("exchange_rate > 0", name="ck_transfers_rate_positive"),
         CheckConstraint("from_account_id <> to_account_id"),
     )
 
@@ -200,6 +220,7 @@ class PlanItem(Base, TenantMixin, TimestampVersionMixin):
     kind: Mapped[str] = mapped_column(String(16), index=True)
     title: Mapped[str] = mapped_column(String(200))
     amount_minor: Mapped[int] = mapped_column(MONEY_TYPE)
+    currency: Mapped[str] = mapped_column(String(3), default="RUB", server_default="RUB")
     date: Mapped[date | None] = mapped_column(Date, index=True)
     month: Mapped[str | None] = mapped_column(String(7), index=True)
     recurrence: Mapped[str] = mapped_column(String(16), default="none")

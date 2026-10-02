@@ -64,6 +64,7 @@ describe('transaction resource integration', () => {
     expect(JSON.parse(String(request?.body))).toEqual({
       type: 'expense', amount_minor: 125050, date: '2026-09-21', account_id: 3,
       category_id: 4, description: 'Обед', comment: null, tag_ids: [6],
+      merchant_currency: null, merchant_amount_minor: null, merchant_exchange_rate: null,
     })
     expect(new Headers(request?.headers).get('Idempotency-Key')).toMatch(/^transaction-/)
   })
@@ -75,7 +76,7 @@ describe('transaction resource integration', () => {
     await screen.findByText('Операций пока нет')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Досрочное погашение' } })
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '10 000' } })
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '10 000' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-21' } })
     fireEvent.change(screen.getByLabelText('Счёт'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('Кредит'), { target: { value: '7' } })
@@ -139,7 +140,7 @@ describe('transaction resource integration', () => {
 
     expect(await screen.findByText('Карта → Накопительный')).toBeInTheDocument()
     expect(screen.getByText('Перевод')).toBeInTheDocument()
-    expect(screen.getByText('750 ₽')).toBeInTheDocument()
+    expect(screen.getByText(/750\s*₽ → 750\s*₽/)).toBeInTheDocument()
   })
 
   it('creates an atomic internal transfer with distinct source and destination accounts', async () => {
@@ -149,7 +150,7 @@ describe('transaction resource integration', () => {
     await screen.findByText('Операций пока нет')
     fireEvent.click(screen.getByRole('button', { name: 'Перевод между счетами' }))
     expect(screen.getByLabelText('Тип операции')).toHaveValue('transfer')
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '10 000' } })
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '10 000' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
     fireEvent.change(screen.getByLabelText('Со счёта'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('На счёт'), { target: { value: '5' } })
@@ -162,6 +163,7 @@ describe('transaction resource integration', () => {
       from_account_id: 3,
       to_account_id: 5,
       amount_minor: 1_000_000,
+      exchange_rate: null,
       date: '2026-09-22',
       comment: 'В резерв',
     })
@@ -175,17 +177,79 @@ describe('transaction resource integration', () => {
 
     await screen.findByText('Карта → Накопительный')
     fireEvent.click(screen.getByRole('button', { name: 'Изменить перевод 8' }))
-    expect(screen.getByLabelText('Сумма')).toHaveValue('750,00')
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '1 000' } })
+    expect(screen.getByLabelText(/^(Сумма|Списать)/)).toHaveValue('750,00')
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '1 000' } })
     fireEvent.change(screen.getByLabelText('Комментарий'), { target: { value: 'Новый резерв' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/transfers/8' && request?.method === 'PATCH')).toBe(true))
     const [, patchRequest] = fetchMock.mock.calls.find(([url, request]) => url === '/api/v1/transfers/8' && request?.method === 'PATCH')!
-    expect(JSON.parse(String(patchRequest?.body))).toEqual({ from_account_id: 3, to_account_id: 5, amount_minor: 100_000, date: '2026-09-20', comment: 'Новый резерв', version: 1 })
+    expect(JSON.parse(String(patchRequest?.body))).toEqual({ from_account_id: 3, to_account_id: 5, amount_minor: 100_000, exchange_rate: null, date: '2026-09-20', comment: 'Новый резерв', version: 1 })
 
     fireEvent.click(await screen.findByRole('button', { name: 'Удалить перевод 8' }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/transfers/8?version=1' && request?.method === 'DELETE')).toBe(true))
+  })
+
+  it('uses the entered rate for a cross-currency transfer and shows both account changes', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (init?.method === 'POST' && path === '/api/v1/transfers') return jsonResponse({ id: 10 })
+      if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/transfers' || path.includes('/categories?') || path.includes('/tags?') || path.includes('/loans?')) return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [
+        { id: 3, name: 'Рубли', currency: 'RUB', archived: false },
+        { id: 5, name: 'Доллары', currency: 'USD', archived: false },
+      ], total: 2 })
+      if (path.startsWith('/api/v1/currencies/quote?')) return jsonResponse({ from_currency: 'RUB', to_currency: 'USD', rate: '0.012', requested_date: '2026-09-22', effective_date: '2026-09-22', source: 'CBR', indicative: true })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+    await screen.findByText('Операций пока нет')
+    fireEvent.click(screen.getByRole('button', { name: 'Перевод между счетами' }))
+    fireEvent.change(screen.getByLabelText('Списать, RUB'), { target: { value: '10 000' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
+    fireEvent.change(screen.getByLabelText('Со счёта'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('На счёт'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Курс: 1 RUB в USD'), { target: { value: '0,011' } })
+    expect(screen.getByText(/На счёт: \+110\s*\$/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Перевести' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/transfers' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/transfers' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ amount_minor: 1_000_000, exchange_rate: '0.011' }))
+  })
+
+  it('shows a foreign-currency purchase above the account-currency debit', async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (init?.method === 'POST' && path === '/api/v1/transactions') return jsonResponse({ id: 9 })
+      if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/transfers' || path.includes('/categories?') || path.includes('/tags?') || path.includes('/loans?')) return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Рублёвая карта', currency: 'RUB', archived: false }], total: 1 })
+      if (path === '/api/v1/currencies') return jsonResponse({ items: [
+        { code: 'RUB', name: 'Российский рубль', minor_digits: 2, popular: true },
+        { code: 'EUR', name: 'Евро', minor_digits: 2, popular: true },
+      ] })
+      if (path.startsWith('/api/v1/currencies/quote?')) return jsonResponse({ from_currency: 'EUR', to_currency: 'RUB', rate: '90', requested_date: '2026-09-22', effective_date: '2026-09-22', source: 'CBR', indicative: true })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+    await screen.findByText('Операций пока нет')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Билет' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
+    fireEvent.change(screen.getByLabelText('Счёт'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Валюта оплаты'), { target: { value: 'EUR' } })
+    fireEvent.change(screen.getByLabelText('Сумма оплаты, EUR'), { target: { value: '20' } })
+    fireEvent.change(screen.getByLabelText('Курс: 1 EUR в RUB'), { target: { value: '96,5' } })
+    expect(screen.getByText(/Со счёта спишется: −1\s*930\s*₽/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({
+      amount_minor: 193_000, merchant_currency: 'EUR', merchant_amount_minor: 2_000, merchant_exchange_rate: '96.5',
+    }))
   })
 })
 
@@ -254,7 +318,7 @@ describe('archived directory references in resource forms', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Изменить Архивные связи' }))
     const editAccount = screen.getAllByRole('combobox').find((element) => (element as HTMLSelectElement).value === '13')
     expect(editAccount).toHaveValue('13')
-    expect(screen.getByRole('option', { name: 'Старая карта (в архиве)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Старая карта · RUB (в архиве)' })).toBeInTheDocument()
     expect(screen.getByLabelText('Категория')).toHaveValue('14')
     expect(screen.getByRole('option', { name: 'Старая категория (в архиве)' })).toBeInTheDocument()
     const editTags = screen.getByLabelText('Теги') as HTMLSelectElement
@@ -323,7 +387,7 @@ describe('plan item reconciliation integration', () => {
     await screen.findByText('Аренда')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить платеж' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Интернет' } })
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '900' } })
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '900' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-28' } })
     fireEvent.change(screen.getByLabelText('Счёт'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('Категория'), { target: { value: '4' } })
@@ -346,7 +410,7 @@ describe('plan item reconciliation integration', () => {
     await screen.findByText('Аренда')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить платеж' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Ипотека' } })
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '1 500' } })
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '1 500' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-15' } })
     fireEvent.change(screen.getByLabelText('Кредит'), { target: { value: '7' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
@@ -366,7 +430,7 @@ describe('plan item reconciliation integration', () => {
     expect(screen.queryByRole('option', { name: /Уже сверено/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Зарплата/ })).not.toBeInTheDocument()
     fireEvent.change(factSelect, { target: { value: '31' } })
-    expect(screen.getByLabelText('Сумма сверки')).toHaveValue('12000,00')
+    expect(screen.getByLabelText(/Сумма сверки/)).toHaveValue('12000,00')
     expect(screen.getByLabelText('Месяц плана')).toHaveValue('2026-09')
     fireEvent.click(screen.getByLabelText('План исполнен полностью'))
     fireEvent.click(screen.getByRole('button', { name: 'Сверить' }))
@@ -385,7 +449,7 @@ describe('plan item reconciliation integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Изменить Аренда' }))
     expect(screen.getByLabelText('Дата')).toHaveAttribute('readonly')
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Аренда квартиры' } })
-    fireEvent.change(screen.getByLabelText('Сумма'), { target: { value: '21 000' } })
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '21 000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить изменения' }))
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/plan-items/21' && request?.method === 'PATCH')).toBe(true))
