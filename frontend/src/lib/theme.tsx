@@ -12,11 +12,20 @@ import {
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 export type ColorScheme = 'forest' | 'ocean' | 'plum' | 'amber'
-export type FontChoice = 'classic' | 'golos'
+export type FontChoice = 'classic' | 'golos' | 'humanist' | 'book'
+
+// The colour input needs a concrete value; these match the light accent in themes.css.
+export const colorSchemeAccents: Record<ColorScheme, string> = {
+  forest: '#2f7354',
+  ocean: '#196f7b',
+  plum: '#815575',
+  amber: '#9b6829',
+}
 
 export const THEME_STORAGE_KEY = 'budget-planner-theme'
 export const COLOR_SCHEME_STORAGE_KEY = 'budget-planner-color-scheme'
-export const FONT_STORAGE_KEY = 'budget-planner-font'
+// The previous key stored "classic" even when no font was explicitly chosen.
+export const FONT_STORAGE_KEY = 'budget-planner-font-v2'
 
 const isThemePreference = (value: unknown): value is ThemePreference =>
   value === 'light' || value === 'dark' || value === 'system'
@@ -25,7 +34,7 @@ const isColorScheme = (value: unknown): value is ColorScheme =>
   value === 'forest' || value === 'ocean' || value === 'plum' || value === 'amber'
 
 const isFontChoice = (value: unknown): value is FontChoice =>
-  value === 'classic' || value === 'golos'
+  value === 'classic' || value === 'golos' || value === 'humanist' || value === 'book'
 
 function systemPrefersDark() {
   return typeof window !== 'undefined'
@@ -63,9 +72,9 @@ export function readFontChoice(
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
     const stored = source?.getItem(FONT_STORAGE_KEY)
-    return isFontChoice(stored) ? stored : 'classic'
+    return isFontChoice(stored) ? stored : 'golos'
   } catch {
-    return 'classic'
+    return 'golos'
   }
 }
 
@@ -80,14 +89,20 @@ export function applyResolvedTheme(theme: ResolvedTheme) {
   if (typeof document === 'undefined') return
   document.documentElement.dataset.theme = theme
   document.documentElement.style.colorScheme = theme
-  document
-    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute('content', theme === 'dark' ? '#151c18' : '#f5f4ee')
+  syncThemeColor()
 }
 
 export function applyColorScheme(colorScheme: ColorScheme) {
   if (typeof document === 'undefined') return
   document.documentElement.dataset.colorScheme = colorScheme
+  syncThemeColor()
+}
+
+function syncThemeColor() {
+  const canvas = getComputedStyle(document.documentElement).getPropertyValue('--canvas').trim()
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute('content', canvas || (document.documentElement.dataset.theme === 'dark' ? '#111c16' : '#f4f7f3'))
 }
 
 export function applyFontChoice(fontChoice: FontChoice) {
@@ -120,7 +135,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   preference: 'system',
   resolvedTheme: 'light',
   colorScheme: 'forest',
-  fontChoice: 'classic',
+  fontChoice: 'golos',
   setPreference: () => undefined,
   setColorScheme: () => undefined,
   setFontChoice: () => undefined,

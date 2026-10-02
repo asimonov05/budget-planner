@@ -239,5 +239,8 @@ backups/
 # OS/editor noise
 .DS_Store
 
+# Local VM deployment helpers contain host and SSH-key defaults.
+/.vm/
+
 # Streamlit
 .streamlit/secrets.toml

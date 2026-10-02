@@ -19,7 +19,7 @@ describe('transaction resource integration', () => {
       if (init?.method === 'PATCH' && path === '/api/v1/transfers/8') return jsonResponse({ id: 8, version: 2 })
       if (init?.method === 'DELETE' && path === '/api/v1/transfers/8?version=1') return new Response(null, { status: 204 })
       if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [], total: 0, limit: 100, offset: 0 })
-      if (path === '/api/v1/transfers') return jsonResponse({ items: [{ id: 8, from_account_id: 3, to_account_id: 5, amount_minor: 75_000, date: '2026-09-20', comment: 'В резерв', version: 1 }], total: 1 })
+      if (path === '/api/v1/transfers') return jsonResponse({ items: [{ id: 8, from_account_id: 3, to_account_id: 5, amount_minor: 75_000, date: '2026-09-20', comment: null, version: 1 }], total: 1 })
       if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', current_balance_minor: 100_000, version: 1 }, { id: 5, name: 'Накопительный', current_balance_minor: 50_000, version: 1 }], total: 2 })
       if (path === '/api/v1/categories?include_archived=true') return jsonResponse({ items: [{ id: 4, name: 'Продукты', kind: 'expense', archived: false, version: 1 }], total: 1 })
       if (path === '/api/v1/tags?include_archived=true') return jsonResponse({ items: [{ id: 6, name: 'Семья', archived: false, version: 1 }], total: 1 })
@@ -141,6 +141,23 @@ describe('transaction resource integration', () => {
     expect(await screen.findByText('Карта → Накопительный')).toBeInTheDocument()
     expect(screen.getByText('Перевод')).toBeInTheDocument()
     expect(screen.getByText(/750\s*₽ → 750\s*₽/)).toBeInTheDocument()
+    expect(screen.queryByText(/^Курс:/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the rate in the history of a cross-currency transfer', async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const path = String(input)
+      if (path.startsWith('/api/v1/transactions?')) return jsonResponse({ items: [], total: 0 })
+      if (path === '/api/v1/transfers') return jsonResponse({ items: [{ id: 9, from_account_id: 3, to_account_id: 5, amount_minor: 10_000, to_amount_minor: 100, exchange_rate: '0.01', date: '2026-09-20', comment: null, version: 1 }], total: 1 })
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [{ id: 3, name: 'Карта', currency: 'RUB' }, { id: 5, name: 'Доллары', currency: 'USD' }], total: 2 })
+      if (path.includes('/categories?') || path.includes('/tags?') || path.includes('/loans?')) return jsonResponse({ items: [], total: 0 })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    expect(await screen.findByText('Карта → Доллары')).toBeInTheDocument()
+    expect(screen.getByText('Курс: 1 RUB = 0.01 USD')).toBeInTheDocument()
   })
 
   it('creates an atomic internal transfer with distinct source and destination accounts', async () => {
@@ -150,10 +167,12 @@ describe('transaction resource integration', () => {
     await screen.findByText('Операций пока нет')
     fireEvent.click(screen.getByRole('button', { name: 'Перевод между счетами' }))
     expect(screen.getByLabelText('Тип операции')).toHaveValue('transfer')
-    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '10 000' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
     fireEvent.change(screen.getByLabelText('Со счёта'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('На счёт'), { target: { value: '5' } })
+    expect(screen.queryByLabelText(/^Курс:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/укажите сумму и курс/)).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '10 000' } })
     fireEvent.change(screen.getByLabelText('Комментарий'), { target: { value: 'В резерв' } })
     fireEvent.click(screen.getByRole('button', { name: 'Перевести' }))
 

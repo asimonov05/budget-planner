@@ -4,6 +4,80 @@
   "source": "https://excalidraw.com",
   "elements": [
     {
+      "id": "rel-notifications-release-notes",
+      "type": "arrow",
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-notifications",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-release-notes",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 190004,
+      "seed": 190004,
+      "opacity": 100,
+      "x": -770,
+      "y": 460,
+      "width": 0,
+      "height": 190,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          190
+        ]
+      ]
+    },
+    {
+      "id": "rel-notifications-user",
+      "type": "arrow",
+      "strokeColor": "#5c940d",
+      "strokeWidth": 2,
+      "strokeStyle": "dashed",
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "startBinding": {
+        "elementId": "tbl-notifications",
+        "focus": 0,
+        "gap": 0
+      },
+      "endBinding": {
+        "elementId": "tbl-users",
+        "focus": 0,
+        "gap": 0
+      },
+      "version": 1,
+      "versionNonce": 190003,
+      "seed": 190003,
+      "opacity": 100,
+      "x": -540,
+      "y": 293,
+      "width": 640,
+      "height": 0,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          640,
+          0
+        ]
+      ]
+    },
+    {
       "id": "rel-transfers-user",
       "type": "arrow",
       "strokeColor": "#495057",
@@ -2352,12 +2426,12 @@
       "type": "text",
       "x": 100,
       "y": -695,
-      "text": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS включена для финансовых таблиц и sessions; поиск сессии ограничен hash текущего токена.",
+      "text": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS защищает финансовые таблицы, sessions, notifications и release_notes; сессия ищется только по hash токена.",
       "fontSize": 16,
       "fontFamily": 2,
       "textAlign": "left",
       "verticalAlign": "top",
-      "originalText": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS включена для финансовых таблиц и sessions; поиск сессии ограничен hash текущего токена.",
+      "originalText": "PK — первичный ключ  •  FK — внешний ключ  •  UQ — уникальность  •  IX — индекс  •  ? — допускает NULL\nUQ(a, b) — составное ограничение; пунктирная зелёная стрелка — ON DELETE CASCADE; money — минимальные денежные единицы.\nRLS защищает финансовые таблицы, sessions, notifications и release_notes; сессия ищется только по hash токена.",
       "autoResize": true,
       "lineHeight": 1.25,
       "width": 1300,
@@ -3679,6 +3753,110 @@
       "isDeleted": false,
       "boundElements": null,
       "updated": 1780000000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-notifications",
+      "type": "rectangle",
+      "x": -1000,
+      "y": 200,
+      "width": 460,
+      "height": 260,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 1
+    },
+    {
+      "id": "txt-notifications",
+      "type": "text",
+      "x": -982,
+      "y": 217,
+      "text": "NOTIFICATIONS\n──────────────\nPK  id: integer\nFK/IX  user_id: integer\nFK/IX  ?  release_note_id: integer\nkind: varchar(16)\ntitle: varchar(160)\nbody: text\ncreated_at: datetime\n?  read_at: datetime\nUQ(user_id, id)",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "NOTIFICATIONS\n──────────────\nPK  id: integer\nFK/IX  user_id: integer\nFK/IX  ?  release_note_id: integer\nkind: varchar(16)\ntitle: varchar(160)\nbody: text\ncreated_at: datetime\n?  read_at: datetime\nUQ(user_id, id)",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 424,
+      "height": 226,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 190001,
+      "version": 2,
+      "versionNonce": 190001,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790900000000,
+      "link": null,
+      "locked": false,
+      "containerId": null
+    },
+    {
+      "id": "tbl-release-notes",
+      "type": "rectangle",
+      "x": -1000,
+      "y": 650,
+      "width": 460,
+      "height": 230,
+      "strokeColor": "#868e96",
+      "backgroundColor": "#f1f3f5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "version": 1
+    },
+    {
+      "id": "txt-release-notes",
+      "type": "text",
+      "x": -982,
+      "y": 667,
+      "text": "RELEASE_NOTES\n─────────────\nPK  id: integer\nUQ  release_version: varchar(40)\ntitle: varchar(160)\nbody: text\nstatus: varchar(16)\ncreated_at: datetime\nupdated_at: datetime\n?  published_at: datetime",
+      "fontSize": 15,
+      "fontFamily": 3,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "originalText": "RELEASE_NOTES\n─────────────\nPK  id: integer\nUQ  release_version: varchar(40)\ntitle: varchar(160)\nbody: text\nstatus: varchar(16)\ncreated_at: datetime\nupdated_at: datetime\n?  published_at: datetime",
+      "autoResize": false,
+      "lineHeight": 1.25,
+      "width": 424,
+      "height": 196,
+      "angle": 0,
+      "strokeColor": "#343a40",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 0,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 190002,
+      "version": 2,
+      "versionNonce": 190002,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1790900000000,
       "link": null,
       "locked": false,
       "containerId": null

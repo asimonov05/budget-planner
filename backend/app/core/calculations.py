@@ -267,7 +267,10 @@ def calculate_forecast(
     transactions_by_month: dict[str, list] = defaultdict(list)
     ordinary_spend_by_month: dict[tuple[int, str], int] = defaultdict(int)
     for transaction in transaction_rows:
-        transactions_by_month[transaction.month].append(transaction)
+        # PostgreSQL SUM(bigint) returns numeric/Decimal. Keep the forecast's
+        # minor-unit fields as integers so the API emits JSON numbers.
+        amount_minor = int(transaction.amount_minor)
+        transactions_by_month[transaction.month].append((transaction, amount_minor))
         if (
             transaction.category_id is not None
             and transaction.goal_id is None
@@ -275,9 +278,9 @@ def calculate_forecast(
             and transaction.type in ("expense", "refund")
         ):
             ordinary_spend_by_month[(transaction.category_id, transaction.month)] += (
-                transaction.amount_minor
+                amount_minor
                 if transaction.type == "expense"
-                else -transaction.amount_minor
+                else -amount_minor
             )
     monthly_categories = {
         category.id: category
@@ -385,34 +388,34 @@ def calculate_forecast(
         category_ordinary_actual: dict[int, int] = defaultdict(int)
         category_expected: dict[int, int] = defaultdict(int)
 
-        for tx in transactions_by_month.get(month, []):
+        for tx, amount_minor in transactions_by_month.get(month, []):
             if tx.type == "income":
-                result.income += tx.amount_minor
-                result.actual_income += tx.amount_minor
+                result.income += amount_minor
+                result.actual_income += amount_minor
                 result.details.append(
                     {
                         "source": "transactions",
                         "kind": "income",
-                        "amount_minor": tx.amount_minor,
+                        "amount_minor": amount_minor,
                         "count": tx.transaction_count,
                     }
                 )
             elif tx.type == "expense":
-                result.expense += tx.amount_minor
-                result.actual_expense += tx.amount_minor
+                result.expense += amount_minor
+                result.actual_expense += amount_minor
                 if tx.goal_id is None and tx.category_id:
-                    category_actual[tx.category_id] += tx.amount_minor
+                    category_actual[tx.category_id] += amount_minor
                     if tx.loan_id is None:
-                        category_ordinary_actual[tx.category_id] += tx.amount_minor
+                        category_ordinary_actual[tx.category_id] += amount_minor
             elif tx.type == "refund":
-                result.expense -= tx.amount_minor
-                result.actual_expense -= tx.amount_minor
+                result.expense -= amount_minor
+                result.actual_expense -= amount_minor
                 if tx.goal_id is None and tx.category_id:
-                    category_actual[tx.category_id] -= tx.amount_minor
+                    category_actual[tx.category_id] -= amount_minor
                     if tx.loan_id is None:
-                        category_ordinary_actual[tx.category_id] -= tx.amount_minor
+                        category_ordinary_actual[tx.category_id] -= amount_minor
             elif tx.type == "adjustment":
-                result.adjustments += tx.amount_minor
+                result.adjustments += amount_minor
 
         for movement in movements_by_month.get(month, []):
             if movement.kind == "allocation":

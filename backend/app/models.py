@@ -84,6 +84,41 @@ class SessionToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ReleaseNote(Base):
+    __tablename__ = "release_notes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    release_version: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="draft", server_default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'published')", name="ck_release_notes_status"),
+        UniqueConstraint("release_version", name="uq_release_notes_release_version"),
+    )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    release_note_id: Mapped[int | None] = mapped_column(
+        ForeignKey("release_notes.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint("kind IN ('message', 'release')", name="ck_notifications_kind"),
+    )
+
+
 class AppSettings(Base, TenantMixin, TimestampVersionMixin):
     __tablename__ = "app_settings"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -452,7 +487,7 @@ class AuditLog(Base, TenantMixin):
 
 
 TENANT_MODELS = (
-    AppSettings, Account, Category, Tag, Goal, Transaction, TransactionTag,
+    Notification, AppSettings, Account, Category, Tag, Goal, Transaction, TransactionTag,
     Transfer, PlanItem, PlanItemTag, PlanOverride, PlanMatch, SalaryRule,
     SalaryMatch, BudgetLimit, BudgetLimitOverride, GoalReserveMovement, Loan,
     LoanScheduleItem, BudgetMonth, ImportBatch, IdempotencyRecord, AuditLog,

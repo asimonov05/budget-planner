@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowLeftRight, CheckCircle2, CirclePlus, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
 import { ApiError, api, asList, jsonBody, queryString } from '../lib/api'
 import { formatMoney, parseMoney, todayISO } from '../lib/format'
-import { useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
+import { colorSchemeAccents, useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
 import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { SalarySettings } from '../components/SalarySettings'
@@ -88,8 +88,10 @@ const fontChoices: Array<{
   title: string
   description: string
 }> = [
-  { value: 'classic', title: 'Классический', description: 'Привычный текст и выразительные заголовки.' },
-  { value: 'golos', title: 'Golos Text', description: 'Современный шрифт для текста и заголовков.' },
+  { value: 'golos', title: 'Golos Text', description: 'Основной шрифт: ясные заголовки и удобные цифры.' },
+  { value: 'classic', title: 'Классический', description: 'Нейтральный текст и заголовки с засечками.' },
+  { value: 'humanist', title: 'Trebuchet MS', description: 'Мягкие формы и открытый рисунок букв.' },
+  { value: 'book', title: 'Georgia', description: 'Спокойный шрифт с засечками для всего интерфейса.' },
 ]
 
 function AppearanceSettings() {
@@ -178,7 +180,7 @@ function Directory({ kind }: { kind: DirectoryKind }) {
   const error = actionError(state.error ?? remove.error)
   return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Справочник</span><h2>{labels[0]}</h2></div><Button onClick={()=>{state.reset();remove.reset();setEditing(null);setOpen(true)}}><CirclePlus/> Добавить</Button></div>
     {error&&<div className="form-alert" role="alert">{error}</div>}
-    {list.isLoading?<State kind="loading" title="Загружаем"/>:list.isError?<State kind="error" title="Не удалось загрузить справочник">{list.error.message}</State>:asList(list.data).length?<div className="directory-list">{asList(list.data).map((item)=><div key={item.id}><span className="color-dot" style={{background:'color' in item ? item.color ?? '#557a5d' : '#557a5d'}}/><div><strong>{item.name}</strong><small>{'current_balance_minor' in item ? `${formatMoney(item.current_balance_minor, 'currency' in item ? item.currency ?? 'RUB' : 'RUB')} · ${item.archived?'в архиве':'активен'}` : `${item.archived?'В архиве':'Активно'}${'monthly_estimate' in item && item.monthly_estimate ? ' · Оценка по среднему' : ''}`}</small></div>{item.archived&&<Badge>Архив</Badge>}<div className="directory-actions"><button className="icon-button" aria-label={`Изменить ${item.name}`} title="Изменить" onClick={()=>{state.reset();remove.reset();setOpen(false);setEditing(item)}}><Pencil/></button><button className="icon-button" aria-label={`${item.archived?'Восстановить':'Архивировать'} ${item.name}`} title={item.archived?'Восстановить':'Архивировать'} onClick={()=>{
+    {list.isLoading?<State kind="loading" title="Загружаем"/>:list.isError?<State kind="error" title="Не удалось загрузить справочник">{list.error.message}</State>:asList(list.data).length?<div className="directory-list">{asList(list.data).map((item)=><div key={item.id}><span className="color-dot" style={{background:'color' in item ? item.color ?? 'var(--green)' : 'var(--green)'}}/><div><strong>{item.name}</strong><small>{'current_balance_minor' in item ? `${formatMoney(item.current_balance_minor, 'currency' in item ? item.currency ?? 'RUB' : 'RUB')} · ${item.archived?'в архиве':'активен'}` : `${item.archived?'В архиве':'Активно'}${'monthly_estimate' in item && item.monthly_estimate ? ' · Оценка по среднему' : ''}`}</small></div>{item.archived&&<Badge>Архив</Badge>}<div className="directory-actions"><button className="icon-button" aria-label={`Изменить ${item.name}`} title="Изменить" onClick={()=>{state.reset();remove.reset();setOpen(false);setEditing(item)}}><Pencil/></button><button className="icon-button" aria-label={`${item.archived?'Восстановить':'Архивировать'} ${item.name}`} title={item.archived?'Восстановить':'Архивировать'} onClick={()=>{
       state.reset();remove.reset()
       if(item.archived||window.confirm(`Архивировать ${labels[1]} «${item.name}»? История сохранится.`))state.mutate({item,archived:!item.archived})
     }}>{item.archived?<RotateCcw/>:<Archive/>}</button><button className="icon-button icon-button--danger" aria-label={`Удалить ${item.name}`} title="Удалить" onClick={()=>{
@@ -190,10 +192,12 @@ function Directory({ kind }: { kind: DirectoryKind }) {
 }
 
 function DirectoryForm({kind,item,baseCurrency,onClose}:{kind:DirectoryKind;item?:DirectoryItem;baseCurrency:string;onClose:()=>void}) {
+  const { colorScheme } = useTheme()
+  const accent = colorSchemeAccents[colorScheme]
   const account=item&&'type'in item?item as Account:undefined
   const category=item&&'kind'in item?item as Category:undefined
   const [name,setName]=useState(item?.name??'')
-  const [extra,setExtra]=useState(item&&'color'in item?item.color??'#557a5d':'')
+  const [extra,setExtra]=useState(item&&'color'in item?item.color??accent:'')
   const [accountType,setAccountType]=useState<'cash'|'bank'|'savings'>((account?.type as 'cash'|'bank'|'savings'|undefined)??'bank')
   const [accountCurrency,setAccountCurrency]=useState(account?.currency??baseCurrency)
   const [openingDate,setOpeningDate]=useState(account?.initial_balance_date??todayISO())
@@ -201,11 +205,11 @@ function DirectoryForm({kind,item,baseCurrency,onClose}:{kind:DirectoryKind;item
   const [monthlyEstimate,setMonthlyEstimate]=useState(category?.monthly_estimate??false)
   const client=useQueryClient()
   const save=useMutation({mutationFn:()=>item
-    ? api(`/${kind}/${item.id}`,{method:'PATCH',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,version:itemVersion(item)}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{monthly_estimate:monthlyEstimate}:{}),version:itemVersion(item)})})
-    : api(`/${kind}`,{method:'POST',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,currency:accountCurrency,initial_balance_minor:parseMoney(extra||'0',accountCurrency),initial_balance_date:openingDate}:{name:name.trim(),color:extra||'#557a5d',...(kind==='categories'?{kind:categoryKind,monthly_estimate:monthlyEstimate}:{})})}),
+    ? api(`/${kind}/${item.id}`,{method:'PATCH',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,version:itemVersion(item)}:{name:name.trim(),color:extra||accent,...(kind==='categories'?{monthly_estimate:monthlyEstimate}:{}),version:itemVersion(item)})})
+    : api(`/${kind}`,{method:'POST',body:jsonBody(kind==='accounts'?{name:name.trim(),type:accountType,currency:accountCurrency,initial_balance_minor:parseMoney(extra||'0',accountCurrency),initial_balance_date:openingDate}:{name:name.trim(),color:extra||accent,...(kind==='categories'?{kind:categoryKind,monthly_estimate:monthlyEstimate}:{})})}),
     onSuccess:()=>{client.invalidateQueries({queryKey:[kind]});client.invalidateQueries({queryKey:['forecast']});client.invalidateQueries({queryKey:['analytics']});onClose()},
   })
-  const dirty=name!==(item?.name??'')||(kind==='accounts'?accountType!==(account?.type??'bank')||accountCurrency!==(account?.currency??'RUB'):extra!==(item&&'color'in item?item.color??'#557a5d':''))||(kind==='categories'&&monthlyEstimate!==(category?.monthly_estimate??false))
+  const dirty=name!==(item?.name??'')||(kind==='accounts'?accountType!==(account?.type??'bank')||accountCurrency!==(account?.currency??'RUB'):extra!==(item&&'color'in item?item.color??accent:''))||(kind==='categories'&&monthlyEstimate!==(category?.monthly_estimate??false))
   const close=()=>{if(!dirty||window.confirm('Закрыть форму и потерять несохранённые изменения?'))onClose()}
   return <Modal title={item?`Изменить «${item.name}»`:'Новая запись'} onClose={close}><div className="form-stack">
     <Field label="Название"><Input autoFocus value={name} onChange={(e)=>setName(e.target.value)}/></Field>
@@ -215,7 +219,7 @@ function DirectoryForm({kind,item,baseCurrency,onClose}:{kind:DirectoryKind;item
       {!item&&<><Field label={`Начальный остаток, ${accountCurrency}`}><Input value={extra} onChange={(e)=>setExtra(e.target.value)} placeholder="0,00"/></Field><Field label="Остаток на начало даты"><Input type="date" value={openingDate} onChange={(e)=>setOpeningDate(e.target.value)}/></Field></>}
     </> : <>
       {kind==='categories' && <Field label="Тип категории" hint={item?'Тип существующей категории нельзя изменить':undefined}><Select value={categoryKind} disabled={Boolean(item)} onChange={(e)=>{setCategoryKind(e.target.value as typeof categoryKind);if(e.target.value==='income')setMonthlyEstimate(false)}}><option value="expense">Расход</option><option value="income">Доход</option></Select></Field>}
-      <Field label="Цвет"><Input type="color" value={extra||'#557a5d'} onChange={(e)=>setExtra(e.target.value)}/></Field>
+      <Field label="Цвет"><Input type="color" value={extra||accent} onChange={(e)=>setExtra(e.target.value)}/></Field>
       {kind==='categories'&&categoryKind==='expense'&&<label className="import-confirm-option"><input type="checkbox" checked={monthlyEstimate} onChange={(e)=>setMonthlyEstimate(e.target.checked)}/><span><strong>Оценивать расход каждый месяц</strong><small>Прогноз добавит недостающую сумму по среднему факту завершённых месяцев. Уже учтённые траты, планы и лимит не удваиваются.</small></span></label>}
     </>}
     {save.isError&&<div className="form-alert" role="alert">{actionError(save.error)}</div>}

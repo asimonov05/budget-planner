@@ -126,7 +126,7 @@ def _provision_roles() -> None:
             cursor.execute("REVOKE INSERT, UPDATE, DELETE ON alembic_version FROM budget_runtime")
             cursor.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO budget_runtime")
             cursor.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO debug_admin")
-            for table in sorted(TENANT_TABLES):
+            for table in sorted(TENANT_TABLES | {"release_notes"}):
                 cursor.execute(sql.SQL("DROP POLICY IF EXISTS debug_admin_read ON {}")
                                .format(sql.Identifier(table)))
                 cursor.execute(sql.SQL("CREATE POLICY debug_admin_read ON {} FOR SELECT "

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,6 +8,7 @@ import { ApiError, api, asList, jsonBody } from '../lib/api'
 import { dateLabel, formatMoney, parseMoney, todayISO } from '../lib/format'
 import type { Account, Category, Goal, ListResponse } from '../lib/types'
 import { Badge, Button, Card, ErrorState, Field, Input, Modal, PageHeader, Progress, Select, State } from '../components/ui'
+import { colorSchemeAccents, useTheme } from '../lib/theme'
 
 const goalSchema = z.object({
   name: z.string().trim().min(1, 'Укажите название'),
@@ -176,7 +177,7 @@ export function GoalsPage() {
       const need = goal.remaining_need_minor ?? Math.max(0, target - goal.reserved_minor)
       const complete = target > 0 ? goal.reserved_minor / target * 100 : 0
       return <Card className="goal-card" key={goal.id}>
-        <div className="goal-top"><span className="goal-icon" style={{ background: goal.color || '#dce8df' }}><Flag /></span>{goal.status && <Badge tone={goal.archived || goal.status === 'archived' ? 'neutral' : goal.status === 'completed' ? 'good' : 'info'}>{goal.archived || goal.status === 'archived' ? 'Архив' : goal.status === 'completed' ? 'Достигнута' : 'В процессе'}</Badge>}</div>
+        <div className="goal-top"><span className="goal-icon" style={{ '--goal-color': goal.color || 'var(--green)' } as CSSProperties}><Flag /></span>{goal.status && <Badge tone={goal.archived || goal.status === 'archived' ? 'neutral' : goal.status === 'completed' ? 'good' : 'info'}>{goal.archived || goal.status === 'archived' ? 'Архив' : goal.status === 'completed' ? 'Достигнута' : 'В процессе'}</Badge>}</div>
         <h2>{goal.name}</h2>
         <div className="goal-amount"><strong>{formatMoney(goal.reserved_minor)}</strong><span>из {formatMoney(target)}</span></div>
         <Progress value={goal.reserved_minor} max={target} tone={goal.color || 'var(--green)'} />
@@ -232,6 +233,8 @@ function GoalForm({ goal, mutation, onClose }: {
   mutation: Pick<ReturnType<typeof useMutation<unknown, Error, GoalValues>>, 'mutate' | 'isPending' | 'isError' | 'error'>
   onClose: () => void
 }) {
+  const { colorScheme } = useTheme()
+  const defaultColor = colorSchemeAccents[colorScheme]
   const target = goal?.target_amount_minor ?? goal?.target_minor ?? 0
   const { register, handleSubmit, formState: { errors } } = useForm<GoalValues>({
     resolver: zodResolver(goalSchema),
@@ -241,8 +244,8 @@ function GoalForm({ goal, mutation, onClose }: {
       reserved: '0',
       deadline: goal.target_date ?? goal.deadline ?? '',
       priority: goal.priority && goal.priority >= 1 && goal.priority <= 5 ? goal.priority : 3,
-      color: goal.color || '#6b8f71',
-    } : { reserved: '0', priority: 3, color: '#6b8f71' },
+      color: goal.color || defaultColor,
+    } : { reserved: '0', priority: 3, color: defaultColor },
   })
   return <Modal title={goal ? `Изменить цель «${goal.name}»` : 'Новая цель'} onClose={onClose}><form className="form-grid" onSubmit={handleSubmit((v) => mutation.mutate(v))}>
     <Field label="Название" error={errors.name?.message}><Input autoFocus {...register('name')} placeholder="Например, отпуск" /></Field>

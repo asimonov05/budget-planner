@@ -16,7 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
-from .api import auth, catalog, finance, io, salary, users
+from .api import auth, catalog, finance, io, notifications, salary, users
 from .admin_panel import install_debug_admin
 from .config import config
 from .db import SessionLocal, verify_database
@@ -109,6 +109,7 @@ api.include_router(catalog.router)
 api.include_router(finance.router)
 api.include_router(salary.router)
 api.include_router(users.router)
+api.include_router(notifications.router)
 api.include_router(io.router)
 api.include_router(reset_budget.router)
 app.include_router(api)

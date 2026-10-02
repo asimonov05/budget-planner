@@ -120,7 +120,7 @@ production-хранилищем и источником общего состо�
 
 **Статус:** in progress
 
-**Проверено:** 2026-09-30
+**Проверено:** 2026-10-02
 
 **Решение:** [ADR-002](adr/tech/ADR-002-single-app-database.md)
 
@@ -134,6 +134,9 @@ production-хранилищем и источником общего состо�
 - Alembic и модели содержат SQLite-специфичные условия и типы.
 - Backend suite и benchmark по-прежнему используют SQLite fixture; целевые
   disposable PostgreSQL fixtures с изоляцией parallel worker ещё не введены.
+- Новые тесты уведомлений также используют SQLite fixture; Alembic `0011`
+  создаёт таблицы на SQLite, но включает RLS только на PostgreSQL. Миграция
+  `0011` отдельно прошла на одноразовой PostgreSQL базе.
 
 ### Целевое состояние
 
@@ -157,7 +160,7 @@ PostgreSQL — единственное поддерживаемое храни�
 
 **Статус:** resolved
 
-**Проверено:** 2026-09-30
+**Проверено:** 2026-10-02
 
 **Решение:** [ADR-002](adr/tech/ADR-002-single-app-database.md)
 
@@ -166,12 +169,19 @@ PostgreSQL — единственное поддерживаемое храни�
 - Рабочая установка перешла с `budget` + `budget_auth` на единственную базу
   `budget`: 30 сентября 2026 года migration job скопировал одного owner и
   сессии, применил Alembic `0007` и `0008`, после проверки старая БД удалена.
-- Все 23 финансовые и user-scoped служебные таблицы имеют обязательный
+- Прежние 23 финансовые и user-scoped служебные таблицы имеют обязательный
   `user_id`, `FORCE RLS`, индексы и составные tenant FK. Ревизия `0008`
   добавила `FORCE RLS` для `sessions`: до аутентификации разрешён только поиск
   по hash текущего токена, после неё — операции текущего владельца; owner
   может отзывать сессии пользователей при управлении учётными записями.
   `users` остаётся глобальной таблицей identity для поиска логина.
+- Добавленная таблица `notifications` хранит отдельную строку с обязательным
+  `user_id` для каждого адресата и защищена `FORCE RLS`. Глобальные
+  `release_notes` также имеют `FORCE RLS`: обычному пользователю видны только
+  опубликованные заметки, владельцу — черновики и опубликованные. На
+  одноразовой PostgreSQL базе применена миграция `0011` и проверены запросы
+  без scope, с чужим scope и с контекстом владельца; API-тесты проверяют
+  изоляцию входящих и однократную публикацию. Тестовая база затем удалена.
 - HTTP-процесс использует роль `budget_runtime` без DDL и `BYPASSRLS`;
   migration job — отдельную DDL-роль. Роль `debug_admin` имеет только
   диагностический `SELECT` и явную RLS-политику, панель скрыта для гостей и
@@ -239,7 +249,7 @@ PostgreSQL — единственное поддерживаемое храни�
 
 **Статус:** open
 
-**Проверено:** 2026-09-30
+**Проверено:** 2026-10-02
 
 **Решение:** [ADR-002](adr/tech/ADR-002-single-app-database.md)
 
@@ -248,6 +258,10 @@ PostgreSQL — единственное поддерживаемое храни�
 - Роутеры `backend/app/api/finance.py`, `catalog.py`, `io.py` и `salary.py`
   одновременно обрабатывают HTTP, выполняют SQLAlchemy-запросы, изменяют
   транзакции и содержат прикладные правила.
+- Новый `backend/app/api/notifications.py` также выполняет SQLAlchemy-запросы,
+  проверяет состояние черновика и делает `commit` при публикации;
+  `backend/app/notification_service.py` выделяет только создание сообщений
+  адресатам. Отдельного application use case и порта хранилища пока нет.
 - Новый `/budget/reset` вынесен в `presentation/reset_budget.py`, чистый
   `application/reset_budget.py` и SQLAlchemy-адаптер
   `infrastructure/reset_budget.py`; use case задаёт commit/rollback и
@@ -312,7 +326,7 @@ owner context и порты репозиториев; SQLAlchemy остаётс�
 
 **Статус:** open
 
-**Проверено:** 2026-09-30
+**Проверено:** 2026-10-02
 
 **Решение:** [ADR-002](adr/tech/ADR-002-single-app-database.md)
 
@@ -321,7 +335,8 @@ owner context и порты репозиториев; SQLAlchemy остаётс�
 - `backend/app/db.py` создаёт sync SQLAlchemy `Engine` и `SessionLocal`;
   HTTP API и security используют sync `Session`. Обработчики FastAPI с `def`
   исполняются в threadpool, а admin middleware явно выносит sync проверку в
-  threadpool. Целевой `AsyncEngine`/`AsyncSession` ещё не введён.
+  threadpool. Новые обработчики уведомлений также используют sync `Session`.
+  Целевой `AsyncEngine`/`AsyncSession` ещё не введён.
 - Отдельный `backend/app/migrate_job.py` использует sync `psycopg` 3 и
   Alembic вне API-процесса, как требует ADR.
 - ZIP import/export остаётся sync кодом; его перенос в async infrastructure

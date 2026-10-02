@@ -8,10 +8,10 @@ import { Badge, ErrorState, PageHeader, State } from '../components/ui'
 import { BudgetCurrencyPicker } from '../components/BudgetCurrencyPicker'
 import { useBudgetCurrency } from '../lib/useBudgetCurrency'
 
-interface CategoryDetail { category_id: string | number; forecast_minor: number }
+interface CategoryDetail { category_id: string | number; forecast_minor: number | string }
 interface Month { month: string; income: number; expense: number; c_end: number; r_end: number; f_end: number; category_details?: CategoryDetail[] }
 interface Forecast { currency: string; months: Month[] }
-const colors = ['#557a5d', '#d87961', '#c49a51', '#617c9c', '#987ca1', '#6f9b91', '#b66868']
+const colors = Array.from({ length: 8 }, (_, index) => `var(--chart-${index + 1})`)
 function minusMonths(month: string, amount: number) { const [y,m] = month.split('-').map(Number); const d = new Date(y,m-1-amount,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` }
 
 export function AnalyticsPage() {
@@ -24,7 +24,20 @@ export function AnalyticsPage() {
     : `/forecast?${queryString({ from_month: start, months: period, include_possible: false, currency })}`) })
   const categoryQuery = useQuery<Category[] | ListResponse<Category>>({ queryKey: ['categories', 'all'], queryFn: () => api('/categories?include_archived=true') })
   const timeline = report.data?.months.map((m) => ({ ...m, label: monthLabel(m.month, true), incomeValue: m.income/scale, expenseValue: m.expense/scale, freeValue: m.f_end/scale, reserveValue: m.r_end/scale })) ?? []
-  const categories = useMemo(() => { const names = new Map(asList(categoryQuery.data).map((category) => [String(category.id), category.name])); const map = new Map<string, number>(); report.data?.months.forEach((m) => m.category_details?.forEach((c) => { const key = names.get(String(c.category_id)) ?? `Категория #${c.category_id}`; map.set(key, (map.get(key) ?? 0) + c.forecast_minor) })); return [...map].map(([name, value]) => ({ name, value: value/scale })).sort((a,b) => b.value-a.value).slice(0,8) }, [report.data, categoryQuery.data, scale])
+  const categories = useMemo(() => {
+    const names = new Map(asList(categoryQuery.data).map((category) => [String(category.id), category.name]))
+    const totals = new Map<string, number>()
+    for (const month of report.data?.months ?? []) {
+      for (const detail of month.category_details ?? []) {
+        const amount = Number(detail.forecast_minor)
+        if (!Number.isFinite(amount)) continue
+        const name = names.get(String(detail.category_id)) ?? `Категория #${detail.category_id}`
+        totals.set(name, (totals.get(name) ?? 0) + amount)
+      }
+    }
+    return [...totals].map(([name, minor]) => ({ name, value: minor / scale }))
+      .sort((a, b) => b.value - a.value).slice(0, 8)
+  }, [report.data, categoryQuery.data, scale])
   return <div className="page"><PageHeader eyebrow="Отчёты" title="Аналитика" description={combined ? `Ориентировочная динамика всех валют в ${baseCurrency}.` : `Динамика отдельно в ${currency}.`} actions={<div className="toolbar"><BudgetCurrencyPicker value={combined ? 'ALL' : currency} onChange={setCurrency} combinedAvailable={displayMode === 'converted'} baseCurrency={baseCurrency}/><input className="input" type="month" value={end} onChange={(e) => setEnd(e.target.value)}/><select className="input" value={period} onChange={(e) => setPeriod(Number(e.target.value) as 6|12|24)}><option value="6">6 месяцев</option><option value="12">12 месяцев</option><option value="24">24 месяца</option></select></div>}/>
     <div className="plan-options"><Badge tone="neutral">Переводы и выделение резервов исключены из потребительских расходов</Badge></div>
     {combined && report.isError && <a className="button button--secondary" href="/settings?tab=currencies">Проверить курсы в настройках</a>}

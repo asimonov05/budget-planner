@@ -33,6 +33,20 @@ it `resolved` only after the completion criteria have been verified; otherwise
 refresh the evidence and leave it open or in progress. Do not silently delete
 resolved items: retain them with their verification evidence.
 
+# Release notes before every release
+
+Before creating a release tag or deploying a new version, prepare a release
+note draft in **Уведомления → Публикация → Release notes**. Use the exact
+release version, a short user-facing title, and concrete changes users can
+observe. Include relevant fixes, changed behaviour, and any action users need
+to take. Check every claim against the code and release checks; do not announce
+unfinished work or leave a release without a note.
+
+Review and save the draft before the release. Once the deployed version is
+verified, publish that draft exactly once so active users receive an in-app
+notification and the note appears in the version history. Published notes are
+immutable; correct a draft before publication.
+
 # Database schema diagram
 
 `docs/database-schema.excalidraw` is the maintained, editable ER diagram for

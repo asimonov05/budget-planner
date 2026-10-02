@@ -6,6 +6,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import Column, Integer, Table
 
 from app.db import Base
@@ -67,11 +68,12 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
             ("owner", "hash", "2026-01-01 00:00:00"),
         )
 
-    (versions / "versions" / "0011_test.py").write_text(
+    current_head = ScriptDirectory.from_config(alembic).get_current_head()
+    (versions / "versions" / "test_future_column.py").write_text(
             "from alembic import op\n"
             "import sqlalchemy as sa\n"
-            "revision = '0011_test'\n"
-            "down_revision = '0010'\n"
+            "revision = 'test_future_column'\n"
+            f"down_revision = {current_head!r}\n"
             "branch_labels = None\n"
             "depends_on = None\n"
             "def upgrade():\n"
@@ -83,7 +85,7 @@ def test_existing_revision_0001_can_upgrade_without_losing_data(tmp_path: Path):
     command.upgrade(alembic, "head")
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0011_test",
+            "test_future_column",
         )
         assert connection.execute("SELECT username, display_name FROM users").fetchone() == (
             "owner",

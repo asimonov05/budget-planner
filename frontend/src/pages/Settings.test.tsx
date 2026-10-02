@@ -77,10 +77,15 @@ describe('settings directories', () => {
     expect(screen.getByRole('radio', { name: /Слива/ })).toBeChecked()
     expect(document.documentElement).toHaveAttribute('data-color-scheme', 'plum')
 
-    expect(screen.getByRole('radio', { name: /Классический/ })).toBeChecked()
-    fireEvent.click(screen.getByRole('radio', { name: /Golos Text/ }))
     expect(screen.getByRole('radio', { name: /Golos Text/ })).toBeChecked()
-    expect(document.documentElement).toHaveAttribute('data-font', 'golos')
+    expect(screen.getByRole('radio', { name: /Trebuchet MS/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Georgia/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: /Georgia/ }))
+    expect(screen.getByRole('radio', { name: /Georgia/ })).toBeChecked()
+    expect(document.documentElement).toHaveAttribute('data-font', 'book')
+    fireEvent.click(screen.getByRole('radio', { name: /Классический/ }))
+    expect(screen.getByRole('radio', { name: /Классический/ })).toBeChecked()
+    expect(document.documentElement).toHaveAttribute('data-font', 'classic')
   })
 
   it('marks an expense category for monthly estimates', async () => {

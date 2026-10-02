@@ -85,7 +85,7 @@ def verify_database() -> dict[str, str | bool]:
                 "SELECT relname FROM pg_class "
                 "WHERE relname = ANY(:tables) AND relkind = 'r' "
                 "AND (NOT relrowsecurity OR NOT relforcerowsecurity OR relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user))"
-            ), {"tables": sorted(TENANT_TABLES | {"sessions"})}).scalars().all()
+            ), {"tables": sorted(TENANT_TABLES | {"sessions", "release_notes"})}).scalars().all()
             if unsafe:
                 raise RuntimeError(f"Tenant RLS is not enforced on: {', '.join(unsafe)}")
             connection.execute(text("SELECT 1"))

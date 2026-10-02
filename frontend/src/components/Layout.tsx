@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  BarChart3, Bug, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, Landmark, LayoutDashboard,
+  BarChart3, Bell, Bug, CalendarDays, ChevronLeft, ChevronRight, CreditCard, FileUp, Flag, Landmark, LayoutDashboard,
   LogOut, Menu, PanelLeftClose, PiggyBank, ReceiptText, Settings, TableProperties, WalletCards, X,
 } from 'lucide-react'
 import { api } from '../lib/api'
@@ -28,11 +28,17 @@ export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate(); const queryClient = useQueryClient()
   const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api<User>('/auth/me') })
+  const unread = useQuery<{ count: number }>({
+    queryKey: ['notifications', 'count'],
+    queryFn: () => api('/notifications/unread-count'),
+    enabled: Boolean(me.data),
+    refetchInterval: 60_000,
+  })
   const logout = useMutation({ mutationFn: () => api('/auth/logout', { method: 'POST' }), onSuccess: () => { queryClient.clear(); navigate('/login') } })
   return <div className={`app-shell ${compact ? 'is-compact' : ''}`}>
     <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
       <div className="brand"><div className="brand-mark">К</div><div className="brand-copy"><strong>Контур</strong><span>Личный бюджет</span></div><button className="mobile-close icon-button" onClick={() => setMobileOpen(false)}><X /></button></div>
-      <nav aria-label="Основное меню">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}</nav>
+      <nav aria-label="Основное меню">{navigation.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)}><Icon/><span>{label}</span></NavLink>)}<NavLink to="/notifications" onClick={() => setMobileOpen(false)} aria-label={unread.data?.count ? `Уведомления, непрочитанных: ${unread.data.count}` : 'Уведомления'}><Bell/><span>Уведомления</span>{Boolean(unread.data?.count) && <span className="notification-nav-count">{unread.data!.count > 99 ? '99+' : unread.data!.count}</span>}</NavLink></nav>
       <div className="sidebar-bottom">
         <button className="sidebar-action" onClick={() => setCompact((v) => !v)}>{compact ? <ChevronRight /> : <PanelLeftClose />}<span>Свернуть</span></button>
         {me.data?.debug_admin_enabled && <a className="sidebar-action" href="/admin/"><Bug/><span>Админка</span></a>}
