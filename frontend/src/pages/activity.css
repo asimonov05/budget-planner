@@ -1,0 +1,30 @@
+.activity-overview{margin:0 0 16px;color:var(--muted);font-size:13px}
+.page--activity .list-toolbar{flex-wrap:wrap;gap:10px}
+.page--activity .search{flex:1 1 260px}
+.page--activity .list-toolbar .badge{white-space:normal}
+.activity-days{display:grid;gap:18px}
+.activity-day{background:var(--paper);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+.activity-day__header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:18px 20px;background:var(--green-soft);border-bottom:1px solid var(--line)}
+.activity-day__header h2{font:600 23px var(--font-display);margin:4px 0}
+.activity-day__header small{color:var(--muted);font-size:12px}
+.activity-day__totals{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.activity-day__total{display:grid;gap:3px;min-width:185px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font-size:12px}
+.activity-day__total>span:not(:first-child){display:flex;justify-content:space-between;gap:15px}
+.activity-day__currency{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.08em}
+.activity-day__entries{display:grid}
+.activity-entry{display:grid;grid-template-columns:34px minmax(170px,1fr) 150px 220px 120px;align-items:center;gap:14px;padding:13px 18px;border-top:1px solid var(--line);font-size:13px}
+.activity-entry:first-child{border-top:0}
+.activity-entry__symbol{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;font-weight:800;background:var(--coral-soft);color:var(--coral)}
+.activity-entry__symbol--income{background:var(--green-soft);color:var(--green-dark)}
+.activity-entry__symbol--transfer{background:var(--blue-soft);color:var(--blue)}
+.activity-entry__copy{min-width:0;display:flex;flex-direction:column;gap:3px}
+.activity-entry__copy>strong{overflow-wrap:anywhere}
+.activity-entry__copy small{color:var(--muted);overflow-wrap:anywhere}
+.activity-entry>.badge{justify-self:start}
+.activity-entry__amount{min-width:0;justify-self:end;text-align:right;white-space:nowrap;font-size:13px}
+.activity-entry--transfer .activity-entry__amount{white-space:normal;overflow-wrap:anywhere}
+.activity-entry__actions{width:120px;justify-content:flex-end;white-space:nowrap}
+.activity-pagination{flex-wrap:wrap}
+.activity-pagination .button{min-width:36px;padding:8px 10px}
+@media(max-width:1100px){.activity-entry{grid-template-columns:34px minmax(0,1fr) auto;grid-template-areas:"symbol copy amount" ". badge actions";gap:8px 12px}.activity-entry__symbol{grid-area:symbol}.activity-entry__copy{grid-area:copy}.activity-entry>.badge{grid-area:badge;justify-self:start}.activity-entry__amount{grid-area:amount}.activity-entry__actions{grid-area:actions;width:auto;justify-content:flex-end}}
+@media(max-width:620px){.activity-day__header{padding:15px}.activity-day__header h2{font-size:20px}.activity-day__totals{width:100%}.activity-day__total{flex:1 1 160px}.activity-entry{grid-template-columns:30px minmax(0,1fr);grid-template-areas:"symbol copy" ". badge" ". amount" ". actions";padding:13px 15px}.activity-entry__amount{justify-self:start;text-align:left;white-space:normal}.activity-entry__actions{justify-content:flex-start}.activity-pagination{margin:16px 0;gap:6px}}

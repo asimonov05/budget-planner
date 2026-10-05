@@ -74,13 +74,17 @@ def test_broadcast_targets_active_users_and_validates_message(client, auth):
 
 def test_release_notes_have_private_drafts_and_publish_once(client, auth):
     _create_user(client, auth, "alice")
-    body = {"release_version": "1.4.0", "title": "Changes", "body": "New reports"}
+    body = {
+        "release_version": "1.4.0", "title": "Changes",
+        "summary": "Reports and search are better", "body": "New reports",
+    }
     assert client.post("/api/v1/release-notes", json=body).status_code == 403
     created = client.post("/api/v1/release-notes", headers=auth, json=body)
     assert created.status_code == 201
     note_id = created.json()["id"]
     assert created.json()["status"] == "draft"
     assert client.get("/api/v1/release-notes").json() == []
+    assert client.get(f"/api/v1/release-notes/{note_id}").status_code == 404
 
     with TestClient(app) as alice:
         alice_auth = _login(alice, "alice", "correct horse battery staple")
@@ -90,10 +94,11 @@ def test_release_notes_have_private_drafts_and_publish_once(client, auth):
 
         edited = client.patch(
             f"/api/v1/release-notes/{note_id}", headers=auth,
-            json={**body, "body": "New reports\nFaster search"},
+            json={**body, "summary": "Fresh reports, quicker search", "body": "New reports\nFaster search"},
         )
         assert edited.status_code == 200
         assert edited.json()["body"] == "New reports\nFaster search"
+        assert edited.json()["summary"] == "Fresh reports, quicker search"
         published = client.post(f"/api/v1/release-notes/{note_id}/publish", headers=auth)
         assert published.status_code == 200
         assert published.json()["delivered"] == 2
@@ -104,7 +109,47 @@ def test_release_notes_have_private_drafts_and_publish_once(client, auth):
 
         public = alice.get("/api/v1/release-notes").json()
         assert len(public) == 1 and public[0]["body"] == "New reports\nFaster search"
+        detail = alice.get(f"/api/v1/release-notes/{note_id}")
+        assert detail.status_code == 200
+        assert detail.json()["summary"] == "Fresh reports, quicker search"
+        assert detail.json()["body"] == "New reports\nFaster search"
         inbox = alice.get("/api/v1/notifications").json()
         assert inbox["total"] == 1
         assert inbox["items"][0]["kind"] == "release"
         assert inbox["items"][0]["release_note_id"] == note_id
+        assert inbox["items"][0]["body"] == "Fresh reports, quicker search"
+        assert alice.get("/api/v1/notifications/release-preview").json()["id"] == inbox["items"][0]["id"]
+
+
+def test_read_all_is_private_idempotent_and_clears_release_preview(client, auth):
+    alice_id = _create_user(client, auth, "alice")
+    note = client.post("/api/v1/release-notes", headers=auth, json={
+        "release_version": "2.0.0", "title": "A release", "summary": "A short update",
+        "body": "A much longer description of the release.",
+    }).json()
+    assert client.post(f"/api/v1/release-notes/{note['id']}/publish", headers=auth).status_code == 200
+    assert client.post("/api/v1/notifications/send", headers=auth, json={
+        "title": "A newer message", "body": "Message body", "recipient_user_id": alice_id,
+    }).status_code == 201
+    with TestClient(app) as alice:
+        alice_auth = _login(alice, "alice", "correct horse battery staple")
+        preview = alice.get("/api/v1/notifications/release-preview")
+        assert preview.status_code == 200
+        assert preview.json()["release_note_id"] == note["id"]
+        assert preview.json()["body"] == "A short update"
+        assert alice.post("/api/v1/notifications/read-all").status_code == 403
+        assert alice.post("/api/v1/notifications/read-all", headers=alice_auth).json() == {"updated": 2}
+        assert alice.post("/api/v1/notifications/read-all", headers=alice_auth).json() == {"updated": 0}
+        assert alice.get("/api/v1/notifications/release-preview").json() is None
+        assert alice.get("/api/v1/notifications/unread-count").json() == {"count": 0}
+    assert client.get("/api/v1/notifications/unread-count").json() == {"count": 1}
+
+
+def test_release_summary_is_validated_and_derived_for_older_clients(client, auth):
+    body = {"release_version": "2.1.0", "title": "Legacy", "body": "First paragraph\n\nMore details"}
+    assert client.post("/api/v1/release-notes", headers=auth, json={
+        **body, "summary": "   ",
+    }).status_code == 422
+    created = client.post("/api/v1/release-notes", headers=auth, json=body)
+    assert created.status_code == 201
+    assert created.json()["summary"] == "First paragraph"

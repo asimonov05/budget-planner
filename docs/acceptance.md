@@ -28,6 +28,14 @@ make acceptance       # lint, unit/integration, build, Compose smoke и Playwrig
 
 `make smoke` и `make acceptance` используют Compose project `budget-planner-smoke` и порт `18080` по умолчанию; их можно изменить через `SMOKE_PROJECT` и `SMOKE_PORT`. Для этих команд требуются `.secrets/postgres-password`, `.secrets/postgres-runtime-password` и `.secrets/postgres-debug-admin-password`. Завершающий `down` не передает `-v`, поэтому named volumes сохраняются. Не направляйте smoke на production project и не удаляйте production volumes ради чистого теста.
 
+Для проверки текущего дерева задайте отдельное имя Compose project и свободный
+порт; `BASE_URL` браузерных тестов должен указывать именно на этот порт.
+Фиксируйте результат migration job, `alembic_version`, ответ `ready`, число
+`passed`/`skipped` в Playwright и факт использования кеша при сборке образа.
+Повторный запуск с тем же именем проекта использует сохранённый тестовый том;
+для проверки миграции с нуля создайте новое имя проекта. Не записывайте пароль
+тестового владельца или токены в отчет и лог команд.
+
 Playwright не создает владельца и не сбрасывает сервер. Гостевые сценарии login/360 px запускаются всегда. Для двух authenticated smoke-сценариев заранее создайте тестового владельца и передайте учетные данные только окружением:
 
 ```bash
@@ -74,4 +82,13 @@ uv run --locked --project backend --directory backend python scripts/benchmark_f
 
 ## Известные пробелы приемки
 
-До release-кандидата остаются, как минимум, чистая multi-stage сборка последнего дерева, `linux/amd64`, container benchmark с RSS/CPU и более глубокое browser-покрытие. Текущий код прошёл Compose ready после миграций `0007` и `0008` и `0008` и пробное восстановление dump в отдельную базу. Исторические результаты прежнего runtime сохранены в [acceptance-status.md](acceptance-status.md). Функциональные пробелы перечислены построчно в [acceptance-status.md](acceptance-status.md).
+Актуальные результаты и границы проверки перечислены в
+[acceptance-status.md](acceptance-status.md); ниже в том же файле сохранён
+отдельно помеченный архив прежнего runtime. Не переносите его выводы на
+текущую PostgreSQL установку.
+
+До полной приемки остаются PostgreSQL integration suite для RLS и upgrade с
+историческими данными, более глубокие browser-сценарии финансовых операций и
+импорта, а также отдельные multi-arch и container benchmark прогоны с
+зафиксированными RSS/CPU. Успешный Compose `ready` и четыре browser smoke-теста
+не закрывают эти сценарии.

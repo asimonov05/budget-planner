@@ -1,6 +1,6 @@
 [project]
 name = "budget-planner-backend"
-version = "0.1.0"
+version = "0.1.1"
 description = "Self-hosted personal budget planner API"
 requires-python = ">=3.13,<3.14"
 dependencies = [

@@ -340,6 +340,68 @@ def list_transactions(
     }
 
 
+@router.get("/transactions/suggestions")
+def suggest_transactions(
+    query: str = Query(min_length=2, max_length=80),
+    transaction_type: str = Query(alias="type", pattern=r"^(income|expense|refund)$"),
+    account_id: int | None = Query(None, ge=1),
+    limit: int = Query(5, ge=1, le=8),
+    _=Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    needle = query.strip().casefold()
+    if len(needle) < 2:
+        raise HTTPException(status_code=422, detail="Введите хотя бы два символа")
+    literal = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    candidates = db.scalars(
+        select(Transaction)
+        .join(Account, Account.id == Transaction.account_id)
+        .where(
+            Transaction.type == transaction_type,
+            Transaction.description.ilike(f"%{literal}%", escape="\\"),
+            Transaction.loan_id.is_(None),
+            Transaction.goal_id.is_(None),
+            Account.archived.is_(False),
+        )
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .limit(100)
+    ).all()
+    candidates.sort(key=lambda item: (
+        item.description.strip().casefold() != needle,
+        not item.description.strip().casefold().startswith(needle),
+        account_id is not None and item.account_id != account_id,
+        len(item.description.strip()) - len(needle),
+        -item.date.toordinal(),
+        -item.id,
+    ))
+    seen: set[tuple[str, int, int | None, str | None]] = set()
+    items = []
+    for item in candidates:
+        signature = (
+            item.description.strip().casefold(), item.account_id,
+            item.category_id, item.merchant_currency,
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        account = db.get(Account, item.account_id)
+        category = db.get(Category, item.category_id) if item.category_id else None
+        items.append({
+            "id": item.id, "description": item.description,
+            "date": item.date.isoformat(), "account_id": item.account_id,
+            "category_id": item.category_id, "amount_minor": item.amount_minor,
+            "account_name": account.name if account else None,
+            "account_currency": account.currency if account else None,
+            "category_name": category.name if category else None,
+            "merchant_currency": item.merchant_currency,
+            "merchant_amount_minor": item.merchant_amount_minor,
+            "tag_ids": [tag.id for tag in item.tags if not tag.archived],
+        })
+        if len(items) >= limit:
+            break
+    return {"items": items}
+
+
 @router.post("/transactions", response_model=TransactionOut, status_code=201)
 def create_transaction(
     body: TransactionCreate,

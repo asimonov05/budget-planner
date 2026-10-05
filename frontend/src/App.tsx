@@ -15,7 +15,7 @@ import { ExchangePage } from './pages/Exchange'
 import { SettingsPage } from './pages/Settings'
 import { CalendarPage } from './pages/Calendar'
 import { AccountsPage } from './pages/Accounts'
-import { NotificationsPage } from './pages/Notifications'
+import { NotificationsPage, ReleaseNotePage } from './pages/Notifications'
 
 async function loadCurrentUser(): Promise<User | null> {
   try {
@@ -54,6 +54,7 @@ export function App() {
       <Route path="exchange" element={<ExchangePage />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="notifications" element={<NotificationsPage />} />
+      <Route path="release-notes/:id" element={<ReleaseNotePage />} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>

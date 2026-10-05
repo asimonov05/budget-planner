@@ -7,7 +7,7 @@ import json
 import re
 import zipfile
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from .. import __version__
 from ..core.ru_payroll import SalaryRule as PayrollRule, salary_payouts
 from ..core.tenant import budget_month_for_user, settings_for_user, tenant_id
-from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, minor_digits, parse_display_rates
+from ..application.currency import SUPPORTED_CURRENCIES, convert_minor, minor_digits, parse_display_rates, positive_rate
 from ..db import reserve_write_slot
 from ..models import (
     Account,
@@ -52,7 +52,17 @@ router = APIRouter(tags=["data"])
 MAX_UPLOAD = 20 * 1024 * 1024
 MAX_ROWS = 100_000
 MAX_FIELD = 16_384
-IMPORT_TYPES = {"transactions", "loan_schedule", "plan_items"}
+IMPORT_TYPES = {"transactions", "transfers", "loan_schedule", "plan_items"}
+TRANSACTION_COLUMNS = {
+    "date", "amount", "type", "account", "account_id", "currency", "category",
+    "tags", "description", "comment", "external_id", "merchant_currency",
+    "merchant_amount", "exchange_rate",
+}
+TRANSFER_COLUMNS = {
+    "date", "amount", "from_account", "from_account_id", "to_account",
+    "to_account_id", "from_currency", "to_currency", "to_amount",
+    "exchange_rate", "comment",
+}
 MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
@@ -78,22 +88,55 @@ def decode_csv(data: bytes, encoding: str | None) -> tuple[str, str]:
     raise HTTPException(status_code=422, detail="CSV encoding is not UTF-8/BOM or Windows-1251")
 
 
-def parse_amount(value: str, currency: str = "RUB") -> int:
-    clean = value.strip().replace("\u00a0", "").replace(" ", "")
+def parse_amount(value: str | None, currency: str = "RUB") -> int:
+    clean = (value or "").strip().replace("\u00a0", "").replace(" ", "")
     if "," in clean and "." in clean:
         # Last separator is decimal; the other is grouping.
         decimal_sep = "," if clean.rfind(",") > clean.rfind(".") else "."
         clean = clean.replace("." if decimal_sep == "," else ",", "").replace(decimal_sep, ".")
     else:
         clean = clean.replace(",", ".")
-    try:
-        return int(
-            (Decimal(clean) * (10 ** minor_digits(currency))).quantize(
-                Decimal("1"), rounding=ROUND_HALF_UP
-            )
-        )
-    except (InvalidOperation, ValueError):
+    if not re.fullmatch(r"-?\d+(?:\.\d+)?", clean):
         raise ValueError("invalid monetary amount")
+    try:
+        amount = Decimal(clean)
+        scaled = amount * (10 ** minor_digits(currency))
+    except (InvalidOperation, OverflowError, TypeError) as exc:
+        raise ValueError("invalid monetary amount") from exc
+    if not scaled.is_finite():
+        raise ValueError("invalid monetary amount")
+    if scaled != scaled.to_integral_value():
+        raise ValueError(f"amount has too many fractional digits for {currency}")
+    if abs(scaled) > MAX_SAFE_INTEGER:
+        raise ValueError("amount exceeds the supported safe range")
+    return int(scaled)
+
+
+def resolve_account(
+    value: str | None, accounts_by_id: dict[int, Account],
+    account_names: dict[str, list[Account]], label: str,
+) -> Account:
+    reference = (value or "").strip()
+    if not reference:
+        raise ValueError(f"{label} is required")
+    if reference.isdigit():
+        account = accounts_by_id.get(int(reference))
+    else:
+        matches = account_names.get(reference, [])
+        if len(matches) > 1:
+            raise ValueError(f"{label} name is ambiguous; use account ID")
+        account = matches[0] if matches else None
+    if not account:
+        raise ValueError(f"unknown {label}")
+    return account
+
+
+def account_reference(raw: dict[str, str | None], name_field: str, id_field: str) -> str:
+    name = (raw.get(name_field) or "").strip()
+    identifier = (raw.get(id_field) or "").strip()
+    if name and identifier:
+        raise ValueError(f"use either {name_field} or {id_field}, not both")
+    return identifier or name
 
 
 def decimal_amount(value: int, currency: str) -> str:
@@ -112,8 +155,8 @@ def validate_amount(value: int, *, allow_zero: bool = False, allow_negative: boo
         raise ValueError("amount exceeds the supported safe range")
 
 
-def parse_date(value: str, fmt: str | None) -> date:
-    value = value.strip()
+def parse_date(value: str | None, fmt: str | None) -> date:
+    value = (value or "").strip()
     if "/" in value and not fmt:
         raise ValueError("ambiguous date requires date_format")
     formats = {"iso": "%Y-%m-%d", "dmy": "%d/%m/%Y", "mdy": "%m/%d/%Y", "dmy_dot": "%d.%m.%Y"}
@@ -172,13 +215,29 @@ def preview_import(
         raise HTTPException(status_code=422, detail="CSV contains duplicate column names")
     if any(len(field or "") > 120 for field in reader.fieldnames):
         raise HTTPException(status_code=422, detail="CSV column name is too long")
+    if import_type in ("transactions", "transfers"):
+        allowed = TRANSACTION_COLUMNS if import_type == "transactions" else TRANSFER_COLUMNS
+        unknown = set(reader.fieldnames) - allowed
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"Unknown CSV columns: {', '.join(sorted(unknown))}")
+        required = {"date", "amount", "type"} if import_type == "transactions" else {"date", "amount"}
+        missing = required - set(reader.fieldnames)
+        references = (("account", "account_id"),) if import_type == "transactions" else (
+            ("from_account", "from_account_id"), ("to_account", "to_account_id"),
+        )
+        missing.update("/".join(pair) for pair in references if not any(name in reader.fieldnames for name in pair))
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Required CSV columns are missing: {', '.join(sorted(missing))}")
     rows, errors = [], []
     accounts = db.scalars(select(Account)).all()
-    account_names = {x.name: x.id for x in accounts}
+    account_names: dict[str, list[Account]] = {}
+    for account in accounts:
+        account_names.setdefault(account.name, []).append(account)
     accounts_by_id = {x.id: x for x in accounts}
     settings = settings_for_user(db)
     base_currency = settings.currency if settings else "RUB"
-    category_names = {x.name: x.id for x in db.scalars(select(Category)).all()}
+    categories_by_name = {x.name: x for x in db.scalars(select(Category)).all()}
+    category_names = {name: item.id for name, item in categories_by_name.items()}
     tag_names = {x.name for x in db.scalars(select(Tag)).all()}
     loan_names = {x.name: x.id for x in db.scalars(select(Loan)).all()}
     fingerprint = hashlib.sha256(
@@ -195,11 +254,13 @@ def preview_import(
     ).hexdigest()
     existing = db.scalar(select(ImportBatch).where(ImportBatch.fingerprint == fingerprint))
     if existing:
+        saved_settings = json.loads(existing.settings_json)
         return {
             "batch_id": existing.id,
             "status": existing.status,
             "rows": json.loads(existing.rows_json),
-            "errors": [],
+            "errors": saved_settings.get("errors", []),
+            "settings": {key: saved_settings.get(key) for key in ("encoding", "delimiter", "date_format")},
             "duplicate_batch": True,
         }
     for number, raw in enumerate(reader, start=2):
@@ -213,27 +274,25 @@ def preview_import(
             continue
         try:
             if import_type == "transactions":
-                account_value = (raw.get("account") or raw.get("account_id") or "").strip()
-                account_id = (
-                    int(account_value)
-                    if account_value.isdigit()
-                    else account_names.get(account_value)
-                )
-                account = accounts_by_id.get(account_id)
-                currency = (raw.get("currency") or (account.currency if account else base_currency)).strip()
-                if currency not in SUPPORTED_CURRENCIES or (account and currency != account.currency):
+                account_value = account_reference(raw, "account", "account_id")
+                account = resolve_account(account_value, accounts_by_id, account_names, "account")
+                currency = (raw.get("currency") or account.currency).strip().upper()
+                if currency not in SUPPORTED_CURRENCIES or currency != account.currency:
                     raise ValueError("currency does not match account")
+                transaction_date = parse_date(raw.get("date", ""), date_format)
+                if transaction_date < account.initial_balance_date:
+                    raise ValueError("transaction predates account opening balance")
                 normalized = {
-                    "date": parse_date(raw.get("date", ""), date_format).isoformat(),
+                    "date": transaction_date.isoformat(),
                     "amount_minor": parse_amount(raw.get("amount", ""), currency),
                     "currency": currency,
                     "type": (raw.get("type") or "").strip().lower(),
-                    "account_id": account_id,
+                    "account_id": account.id,
                     "account": account_value,
                     "category": (raw.get("category") or "").strip() or None,
                     "category_id": category_names.get((raw.get("category") or "").strip()),
                     "tags": [x.strip() for x in (raw.get("tags") or "").split("|") if x.strip()],
-                    "description": raw.get("description", ""),
+                    "description": raw.get("description") or "",
                     "comment": raw.get("comment") or None,
                     "external_id": raw.get("external_id") or None,
                 }
@@ -244,14 +303,39 @@ def preview_import(
                 ) + [f"tag:{tag}" for tag in normalized["tags"] if tag not in tag_names]
                 if normalized["type"] not in ("income", "expense", "refund", "adjustment"):
                     raise ValueError("invalid type")
-                if not account_id:
-                    raise ValueError("unknown or missing account")
-                if not account:
-                    raise ValueError("unknown or missing account")
                 validate_amount(
                     normalized["amount_minor"],
                     allow_negative=normalized["type"] == "adjustment",
                 )
+                if normalized["type"] == "adjustment" and normalized["category"]:
+                    raise ValueError("adjustment cannot have a category")
+                known_category = categories_by_name.get(normalized["category"])
+                expected_kind = "income" if normalized["type"] == "income" else "expense"
+                if known_category and known_category.kind != expected_kind:
+                    raise ValueError("category kind does not match transaction type")
+                merchant_currency = (raw.get("merchant_currency") or "").strip().upper()
+                merchant_amount = (raw.get("merchant_amount") or "").strip()
+                exchange_rate = (raw.get("exchange_rate") or "").strip()
+                if any((merchant_currency, merchant_amount, exchange_rate)):
+                    if not all((merchant_currency, merchant_amount, exchange_rate)):
+                        raise ValueError("merchant_currency, merchant_amount and exchange_rate are required together")
+                    if normalized["type"] not in ("expense", "refund"):
+                        raise ValueError("purchase currency is available only for expense or refund")
+                    if merchant_currency not in SUPPORTED_CURRENCIES or merchant_currency == currency:
+                        raise ValueError("merchant currency must differ from account currency")
+                    merchant_minor = parse_amount(merchant_amount, merchant_currency)
+                    validate_amount(merchant_minor)
+                    rate = positive_rate(exchange_rate.replace(",", "."))
+                    calculated = convert_minor(merchant_minor, merchant_currency, currency, rate)
+                    if abs(calculated - normalized["amount_minor"]) > 1:
+                        raise ValueError("exchange rate does not match account debit")
+                    normalized.update(
+                        merchant_currency=merchant_currency,
+                        merchant_amount_minor=merchant_minor,
+                        merchant_exchange_rate=format(rate, "f"),
+                    )
+                else:
+                    normalized.update(merchant_currency=None, merchant_amount_minor=None, merchant_exchange_rate=None)
                 if normalized["category"] and len(normalized["category"]) > 120:
                     raise ValueError("category name is too long")
                 if any(len(tag) > 80 for tag in normalized["tags"]):
@@ -275,6 +359,65 @@ def preview_import(
                         )
                     )
                 )
+            elif import_type == "transfers":
+                source_value = account_reference(raw, "from_account", "from_account_id")
+                target_value = account_reference(raw, "to_account", "to_account_id")
+                source = resolve_account(source_value, accounts_by_id, account_names, "from_account")
+                target = resolve_account(target_value, accounts_by_id, account_names, "to_account")
+                if source.id == target.id:
+                    raise ValueError("transfer accounts must differ")
+                source_currency = (raw.get("from_currency") or source.currency).strip().upper()
+                target_currency = (raw.get("to_currency") or target.currency).strip().upper()
+                if source_currency != source.currency or target_currency != target.currency:
+                    raise ValueError("transfer currency does not match account")
+                transfer_date = parse_date(raw.get("date", ""), date_format)
+                if transfer_date < source.initial_balance_date or transfer_date < target.initial_balance_date:
+                    raise ValueError("transfer predates account opening balance")
+                amount_minor = parse_amount(raw.get("amount", ""), source_currency)
+                validate_amount(amount_minor)
+                raw_rate = (raw.get("exchange_rate") or "").strip()
+                if source_currency != target_currency and not raw_rate:
+                    raise ValueError("exchange_rate is required for a cross-currency transfer")
+                rate = positive_rate(raw_rate.replace(",", ".") if raw_rate else "1")
+                if source_currency == target_currency and rate != 1:
+                    raise ValueError("same-currency exchange_rate must be 1")
+                calculated_target = convert_minor(amount_minor, source_currency, target_currency, rate)
+                if calculated_target <= 0:
+                    raise ValueError("converted transfer amount must be positive")
+                to_amount_minor = (
+                    parse_amount(raw["to_amount"], target_currency)
+                    if raw.get("to_amount")
+                    else calculated_target
+                )
+                validate_amount(to_amount_minor)
+                if to_amount_minor != calculated_target:
+                    raise ValueError("to_amount does not match amount and exchange_rate")
+                comment = raw.get("comment") or None
+                if comment and len(comment) > 4000:
+                    raise ValueError("comment is too long")
+                normalized = {
+                    "date": transfer_date.isoformat(),
+                    "from_account_id": source.id,
+                    "to_account_id": target.id,
+                    "from_account": source_value,
+                    "to_account": target_value,
+                    "from_currency": source_currency,
+                    "to_currency": target_currency,
+                    "amount_minor": amount_minor,
+                    "to_amount_minor": to_amount_minor,
+                    "exchange_rate": format(rate, "f"),
+                    "comment": comment,
+                    "requires_reference_confirmation": [],
+                    "duplicate_candidate": bool(db.scalar(
+                        select(func.count()).select_from(Transfer).where(
+                            Transfer.date == transfer_date,
+                            Transfer.from_account_id == source.id,
+                            Transfer.to_account_id == target.id,
+                            Transfer.amount_minor == amount_minor,
+                            Transfer.to_amount_minor == to_amount_minor,
+                        )
+                    )),
+                }
             elif import_type == "loan_schedule":
                 loan_value = (raw.get("loan_id") or raw.get("loan") or "").strip()
                 loan_id = int(loan_value) if loan_value.isdigit() else loan_names.get(loan_value)
@@ -366,6 +509,8 @@ def preview_import(
             rows.append({"row": number, "raw": raw, "normalized": normalized, "selected": True})
         except (ValueError, KeyError) as exc:
             errors.append({"row": number, "message": str(exc), "raw": raw})
+    if not rows and not errors:
+        raise HTTPException(status_code=422, detail="CSV contains no data rows")
     settings = {
         "encoding": actual_encoding,
         "delimiter": actual_delimiter,
@@ -374,7 +519,10 @@ def preview_import(
     batch = ImportBatch(
         fingerprint=fingerprint,
         import_type=import_type,
-        settings_json=json.dumps(settings),
+        settings_json=json.dumps({
+            **settings,
+            "errors": [{"row": error.get("row"), "message": error["message"]} for error in errors],
+        }, ensure_ascii=False),
         rows_json=json.dumps(rows, ensure_ascii=False),
         status="invalid" if errors else "previewed",
     )
@@ -500,6 +648,10 @@ def confirm_import(
                 Transaction(
                     type=row["type"],
                     amount_minor=row["amount_minor"],
+                    merchant_currency=row.get("merchant_currency"),
+                    merchant_amount_minor=row.get("merchant_amount_minor"),
+                    merchant_exchange_rate=Decimal(row["merchant_exchange_rate"])
+                    if row.get("merchant_exchange_rate") else None,
                     date=transaction_date,
                     account_id=row["account_id"],
                     category_id=category_id,
@@ -511,6 +663,30 @@ def confirm_import(
                     tags=tags,
                 )
             )
+            created += 1
+        elif batch.import_type == "transfers":
+            transfer_date = date.fromisoformat(row["date"])
+            ensure_import_month_open(db, transfer_date)
+            source = db.get(Account, row["from_account_id"])
+            target = db.get(Account, row["to_account_id"])
+            if not source or not target or source.id == target.id:
+                raise HTTPException(status_code=409, detail="Import transfer accounts changed")
+            if source.currency != row["from_currency"] or target.currency != row["to_currency"]:
+                raise HTTPException(status_code=409, detail="Import transfer account currency changed")
+            if transfer_date < source.initial_balance_date or transfer_date < target.initial_balance_date:
+                raise HTTPException(status_code=422, detail="Imported transfer predates an account opening balance")
+            rate = positive_rate(row["exchange_rate"])
+            if convert_minor(row["amount_minor"], source.currency, target.currency, rate) != row["to_amount_minor"]:
+                raise HTTPException(status_code=422, detail="Imported transfer amount and rate disagree")
+            db.add(Transfer(
+                from_account_id=source.id,
+                to_account_id=target.id,
+                amount_minor=row["amount_minor"],
+                to_amount_minor=row["to_amount_minor"],
+                exchange_rate=rate,
+                date=transfer_date,
+                comment=row.get("comment"),
+            ))
             created += 1
         elif batch.import_type == "loan_schedule":
             ensure_import_month_open(db, date.fromisoformat(row["due_date"]))

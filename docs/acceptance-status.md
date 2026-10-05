@@ -1,6 +1,84 @@
 # Статус приемки
 
-> Архивный статус прежнего SQLite-развёртывания. После перехода рабочей установки на PostgreSQL проверки нового хранилища описаны в [архитектуре](architecture.md) и [процедуре резервного копирования](backup-restore.md).
+## Актуальный отчет: 2026-10-05
+
+Проверено рабочее дерево поверх commit `4805205` с незакоммиченными изменениями,
+включая новые файлы. Это снимок состояния на момент команд, а не результат
+проверки одного неизменного commit или опубликованного образа. Локальная среда:
+macOS `arm64`, Python `3.13.13`, Node.js `26.4.0`, npm `12.1.0`. Описанный в
+[процедуре](acceptance.md) поддерживаемый Node.js 22 для локальных frontend
+команд в этом прогоне не использовался.
+
+Обозначения: `[x]` проверка выполнена на указанном уровне, `[~]` выполнена
+частично, `[ ]` не выполнена. Успешный тест с подменённым API или SQLite не
+является доказательством работы того же сценария в браузере с PostgreSQL.
+
+Итог: все выполненные автоматические проверки прошли (127 backend-тестов,
+81 frontend-тест, 4 browser smoke-сценария); свежая PostgreSQL схема дошла до
+`0012`, а выборочный live API smoke прошёл. Полная приемка всех финансовых
+сценариев и PostgreSQL-изоляции пока не подтверждена.
+
+### Выполненные проверки
+
+| Уровень | Команда / действие (секреты скрыты) | Результат | Граница доказательства |
+|---|---|---|---|
+| Backend suite | `backend/.venv/bin/python -m pytest backend/tests -q` | [x] 127 тестов прошли; одно стороннее `DeprecationWarning` из Starlette/anyio | `backend/tests/conftest.py` задаёт SQLite-файл и создаёт схему через SQLAlchemy; тесты не проверяют PostgreSQL RLS |
+| Backend static | `backend/.venv/bin/python -m ruff check backend/app backend/tests backend/alembic backend/scripts` | [x] `All checks passed!` | Проверка стиля и статических правил, без выполнения API |
+| Frontend unit | из `frontend/`: `npm test` | [x] 17 файлов, 81 тест прошёл | Fetch/API подменены; реальная БД не участвует |
+| Frontend types | из `frontend/`: `npm run typecheck`; `npm run lint` | [x] оба exit 0 | `lint` сейчас повторяет `tsc -b --pretty false`, отдельного ESLint нет |
+| Frontend production bundle | из `frontend/`: `npx vite build --outDir /private/tmp/budget-planner-frontend-audit-build-20261005` после проверки типов | [x] 2306 модулей, сборка прошла | Vite предупредил об основном JS чанке `1,056.77 kB` при пороге `500 kB`; сборка выполнена на Node 26 |
+| E2E types | `npm --prefix e2e run typecheck` | [x] exit 0 | Не запускает браузер |
+| Compose config | `docker compose config --quiet` | [x] exit 0 | Проверяет конфигурацию, но не запускает контейнеры |
+| PostgreSQL/Compose | `BIND_HOST=127.0.0.1 APP_PORT=18082 TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=e2e-audit docker compose -p budget-planner-e2e-audit up -d --build --wait` | [x] PostgreSQL и app healthy, migration job exit 0, `alembic_version=0012`, ready и `/login` → 200, неизвестный API route → JSON 404 | BuildKit использовал кэш слоёв; проверен запуск новой БД, но не upgrade `0011→0012` с историческими данными |
+| Browser smoke | С заданными через окружение `E2E_USERNAME`/`E2E_PASSWORD`: `BASE_URL=http://127.0.0.1:18082 PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-browsers npm --prefix e2e test -- --output=/private/tmp/budget-planner-e2e-audit-full-unsandboxed` | [x] 4 passed, 0 skipped | Гостевой вход, ширина 360 px, вход владельца, годовой план и мобильная навигация. Chromium потребовал запуска вне macOS sandbox из-за отказа MachPort; пароль в отчет не записан |
+| Live API smoke | В том же тестовом Compose-проекте: login; `POST /api/v1/accounts`; `POST /api/v1/transactions`; `GET /api/v1/activity?search=Smoke`; `GET /api/v1/transactions/suggestions?query=Sm&type=expense&account_id=…` | [x] 200/201; одна расходная запись, дневной итог `1234` minor units, подсказка нашла её | Реальный PostgreSQL и тестовый владелец; остальные финансовые пути не затронуты |
+
+После проверки выполнено `docker compose -p budget-planner-e2e-audit down` без
+`-v`: контейнеры остановлены, отдельный тестовый том сохранён по правилам
+[процедуры](acceptance.md). Существующая пользовательская база не изменялась.
+Первый запуск Chromium внутри macOS sandbox завершился до выполнения тестов
+из-за `MachPort Permission denied`; повторный запуск вне sandbox выполнил все
+четыре сценария успешно.
+
+### Проверенный функционал и пределы
+
+| Область | Статус | Текущее доказательство и недостающая проверка |
+|---|:---:|---|
+| Вход, регистрация, роли, CSRF, изоляция пользователей | [~] | Прошли `test_api.py`, `test_registration.py`, `test_admin_auth.py`, `test_shared_budgets.py` и `App.test.tsx`; авторизованный вход прошёл на изолированном Compose. Backend suite работает на SQLite fixture; RLS и права PostgreSQL для нескольких владельцев в этом прогоне отдельно не проверялись. |
+| Счета, факты, переводы, валюты, лента и подсказки похожих операций | [~] | Прошли `test_account_balances.py`, `test_multicurrency.py`, `test_activity.py`, `test_transaction_suggestions.py`, `Accounts.test.tsx` и `Resources.test.tsx`. Live API на PostgreSQL создал счёт/расход и прочитал ленту/подсказку. Переводы, валютные покупки и полный браузерный путь создания операций на PostgreSQL ещё не проверены. |
+| План, прогноз, календарь, аналитика, цели, кредиты и зарплата | [~] | Прошли расчетные/property/API-тесты (`test_calculations.py`, `test_properties.py`, `test_loan_features.py`, `test_salary_api.py` и смежные) и UI-тесты `Plan`, `Dashboard`, `Calendar`, `Analytics`, `Goals`, `Resources`. Сквозной браузерный прогноз с реальной базой и промежуточные платежи цели не проверены. |
+| CSV и ZIP импорт/экспорт | [~] | `test_csv_operations_transfers.py` проверяет импорт переводов, валютные покупки, preview ошибок, повтор и откат при закрытии месяца; `test_api.py` содержит ZIP round-trip. `Exchange.test.tsx` проверяет UI формата и подтверждения. Банковский PDF в этом прогоне не обрабатывался; полный импорт через браузер и PostgreSQL не проверен. |
+| Уведомления и release notes | [~] | `test_notifications.py`, `Notifications.test.tsx` и `Layout.test.tsx` покрывают приватность, черновик/однократную публикацию, краткий анонс, прочтение и переход к полной заметке. Проверка API использует SQLite, UI — подменённый API; публикация через браузер на PostgreSQL не проверена. |
+| Миграции и схема данных | [~] | `test_migrations.py` и `test_database_schema_diagram.py` прошли; миграция свежей PostgreSQL базы достигла `0012`. Upgrade с историческими данными, отдельная проверка RLS и визуальный осмотр Excalidraw в этом прогоне не выполнялись. |
+| Настройки, темы и меню | [~] | `Settings.test.tsx`, `theme.test.tsx`, `Layout.test.tsx` проверяют настройку/сохранение предпочтений и доступность скрытых пунктов. Визуальная проверка текущей сборки на нескольких размерах экрана не выполнялась. |
+| Резервное копирование и производительность | [ ] | В текущем прогоне не выполнялись внешний `pg_dump`/`pg_restore`, проверка восстановления и benchmark под контейнерными лимитами; прежние измерения находятся только в архиве ниже. |
+
+Проверенные ограничения реализации: CSV-перевод не имеет устойчивого внешнего
+ID между разными batch ([TD-008](technical-debt.md)); мультивалютные цели,
+кредиты, лимиты и зарплата пока ограничены основной валютой бюджета
+([TD-007](technical-debt.md)). Это ограничения текущего функционала, а не
+падения тестов.
+
+### Что делать перед следующей приемкой
+
+1. Добавить воспроизводимый PostgreSQL integration suite: RLS, чужой `user_id`,
+   ограничения и upgrade `0011→0012` с данными. Свежая схема до `0012` и
+   несколько API-запросов на PostgreSQL уже проверены выше.
+2. Дополнить четыре пройденных browser smoke-сценария сквозными тестами
+   перевода, CSV preview/confirm и публикации release note.
+3. Повторить frontend-сборку на поддерживаемом Node.js 22 и оценить
+   предупреждение о размере чанка, если оно влияет на загрузку интерфейса.
+
+Процедура и правило записи доказательств находятся в [acceptance.md](acceptance.md),
+инструкции для будущих агентов — в [AGENTS.md](../AGENTS.md). Известный переход
+backend-тестов с SQLite на PostgreSQL отслеживает [TD-003](technical-debt.md).
+
+## Архив: приемка прежнего SQLite-развёртывания (сентябрь 2026)
+
+Ниже сохранены исторические результаты и ограничения старого runtime. Они не
+описывают автоматически состояние текущей PostgreSQL установки: например,
+импорт CSV-переводов уже реализован и проверен в актуальном отчете выше, а
+application-managed физический backup удалён.
 
 Легенда: `[x]` подтверждено; `[~]` подтверждена только часть; `[ ]` не подтверждено. Доказательство относится к текущему рабочему дереву только там, где указана свежая команда; старый образ не считается доказательством для нового кода.
 

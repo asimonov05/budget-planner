@@ -1,0 +1,2 @@
+date;amount;type;account;currency;category;tags;description;comment;external_id;merchant_currency;merchant_amount;exchange_rate
+2026-10-08;950,00;expense;Основная карта;RUB;Путешествия;отпуск;Билет;;bank-fx-0001;EUR;10,00;95

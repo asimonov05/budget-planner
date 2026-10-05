@@ -166,3 +166,35 @@ def test_loan_migration_preserves_existing_plan_matches(tmp_path: Path):
         assert connection.execute(
             "SELECT plan_item_id, transaction_id FROM plan_matches"
         ).fetchall() == [(1, 1)]
+
+
+def test_release_summary_migration_preserves_full_note_and_shortens_inbox(tmp_path: Path):
+    backend_root = Path(__file__).resolve().parents[1]
+    database = tmp_path / "notifications.sqlite3"
+    alembic = Config(str(backend_root / "alembic.ini"))
+    alembic.set_main_option("script_location", str(backend_root / "alembic"))
+    alembic.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    command.upgrade(alembic, "0011")
+    summary = "Release summary."
+    full_body = "# Release 1.0\n\n" + summary + "\n\n" + "Full details. " * 30
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO users (id, username, password_hash, created_at) VALUES (1, 'owner', 'hash', '2026-01-01')"
+        )
+        connection.execute(
+            "INSERT INTO release_notes (id, release_version, title, body, status, created_at, updated_at) "
+            "VALUES (1, '1.0.0', 'Release', ?, 'published', '2026-01-01', '2026-01-01')",
+            (full_body,),
+        )
+        connection.execute(
+            "INSERT INTO notifications (id, user_id, release_note_id, kind, title, body, created_at) "
+            "VALUES (1, 1, 1, 'release', 'Release', ?, '2026-01-01')",
+            (full_body,),
+        )
+    command.upgrade(alembic, "0012")
+    with sqlite3.connect(database) as connection:
+        note = connection.execute("SELECT summary, body FROM release_notes WHERE id = 1").fetchone()
+        notification = connection.execute("SELECT body FROM notifications WHERE id = 1").fetchone()
+        assert note == (summary, full_body)
+        assert notification == (summary,)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

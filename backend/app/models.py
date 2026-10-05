@@ -89,6 +89,7 @@ class ReleaseNote(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     release_version: Mapped[str] = mapped_column(String(40))
     title: Mapped[str] = mapped_column(String(160))
+    summary: Mapped[str] = mapped_column(String(300), default="", server_default="")
     body: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="draft", server_default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

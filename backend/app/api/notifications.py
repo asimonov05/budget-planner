@@ -39,6 +39,26 @@ class MessageCreate(WrittenContent):
 
 class ReleaseNoteDraft(WrittenContent):
     release_version: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z._-]{0,39}$")
+    summary: str | None = Field(default=None, min_length=1, max_length=300)
+
+    @field_validator("summary")
+    @classmethod
+    def nonempty_summary(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Text cannot be empty")
+        return stripped
+
+
+def preview_from_body(body: str) -> str:
+    """Provide a short preview for older clients that omit the summary."""
+    paragraphs = [part.replace("\n", " ").strip() for part in body.split("\n\n") if part.strip()]
+    first_paragraph = next(
+        (part for part in paragraphs if not part.startswith("#")), paragraphs[0]
+    )
+    return first_paragraph[:299] + "…" if len(first_paragraph) > 300 else first_paragraph
 
 
 class NotificationOut(BaseModel):
@@ -57,6 +77,7 @@ class ReleaseNoteOut(BaseModel):
     id: int
     release_version: str
     title: str
+    summary: str
     body: str
     status: Literal["draft", "published"]
     created_at: datetime
@@ -89,6 +110,32 @@ def unread_count(user: User = Depends(require_user), db: Session = Depends(get_d
         Notification.user_id == user.id, Notification.read_at.is_(None)
     )) or 0
     return {"count": count}
+
+
+@router.get("/notifications/release-preview", response_model=NotificationOut | None)
+def latest_unread_release(
+    user: User = Depends(require_user), db: Session = Depends(get_db)
+) -> Notification | None:
+    return db.scalar(
+        select(Notification).where(
+            Notification.user_id == user.id,
+            Notification.kind == "release",
+            Notification.read_at.is_(None),
+        ).order_by(Notification.created_at.desc(), Notification.id.desc()).limit(1)
+    )
+
+
+@router.post("/notifications/read-all")
+def mark_all_read(
+    user: User = Depends(require_csrf_unlocked), db: Session = Depends(get_db)
+) -> dict[str, int]:
+    changed = db.execute(
+        update(Notification).where(
+            Notification.user_id == user.id, Notification.read_at.is_(None)
+        ).values(read_at=datetime.now(timezone.utc))
+    ).rowcount
+    db.commit()
+    return {"updated": changed or 0}
 
 
 @router.post("/notifications/{notification_id}/read", response_model=NotificationOut)
@@ -148,6 +195,20 @@ def manage_release_notes(
     return db.scalars(select(ReleaseNote).order_by(ReleaseNote.id.desc())).all()
 
 
+@router.get("/release-notes/{note_id}", response_model=ReleaseNoteOut)
+def get_release_note(
+    note_id: int,
+    _user: User = Depends(require_user),
+    db: Session = Depends(get_auth_db),
+) -> ReleaseNote:
+    note = db.scalar(select(ReleaseNote).where(
+        ReleaseNote.id == note_id, ReleaseNote.status == "published"
+    ))
+    if note is None:
+        raise HTTPException(status_code=404, detail="Release note not found")
+    return note
+
+
 @router.post("/release-notes", response_model=ReleaseNoteOut, status_code=201)
 def create_release_note(
     body: ReleaseNoteDraft,
@@ -155,7 +216,9 @@ def create_release_note(
     _csrf: User = Depends(require_csrf_unlocked),
     db: Session = Depends(get_auth_db),
 ) -> ReleaseNote:
-    note = ReleaseNote(**body.model_dump())
+    values = body.model_dump()
+    values["summary"] = values["summary"] or preview_from_body(values["body"])
+    note = ReleaseNote(**values)
     db.add(note)
     db.commit()
     db.refresh(note)
@@ -175,7 +238,9 @@ def edit_release_note(
         raise HTTPException(status_code=404, detail="Release note not found")
     if note.status != "draft":
         raise HTTPException(status_code=409, detail="Published release notes cannot be edited")
-    for key, value in body.model_dump().items():
+    values = body.model_dump()
+    values["summary"] = values["summary"] or preview_from_body(values["body"])
+    for key, value in values.items():
         setattr(note, key, value)
     note.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -204,7 +269,7 @@ def publish_release_note(
     note = db.get(ReleaseNote, note_id)
     recipients = db.scalars(select(User.id).where(User.active.is_(True))).all()
     delivered = deliver_notifications(
-        db, recipients, kind="release", title=note.title, body=note.body,
+        db, recipients, kind="release", title=note.title, body=note.summary,
         release_note_id=note.id,
     )
     db.commit()

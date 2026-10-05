@@ -12,6 +12,8 @@ import { Badge, Button, ErrorState, Field, Input, Modal, PageHeader, Select, Sta
 import { AutoLoanProjection } from '../components/AutoLoanProjection'
 import { SalaryIncomeSummary } from '../components/SalaryIncomeSummary'
 import { CurrencySelect } from '../components/CurrencySelect'
+import { TransactionSuggestions, type TransactionSuggestion } from '../components/TransactionSuggestions'
+import './activity.css'
 
 type ResourceType = 'income' | 'payment' | 'transaction' | 'loan'
 interface PlanItem {
@@ -21,6 +23,14 @@ interface PlanItem {
 }
 type Item = PlanItem | Transaction | Loan
 type EditableItem = Item | Transfer
+type ActivityEntry = { kind: 'transaction'; transaction: Transaction } | { kind: 'transfer'; transfer: Transfer }
+interface ActivityDay {
+  date: string
+  total_items: number
+  totals: { currency: string; income_minor: number; expense_minor: number }[]
+  items: ActivityEntry[]
+}
+interface ActivityResponse { days: ActivityDay[]; total: number; limit: number; offset: number }
 
 const configs = {
   income: { eyebrow: 'Поступления', title: 'Доходы', description: 'Регулярная зарплата и разовые поступления.', add: 'Добавить доход', endpoint: '/plan-items', empty: 'Доходов пока нет' },
@@ -173,26 +183,40 @@ function transferSubtitle(transfer: Transfer, accountCurrencies: Map<string, str
 
 export function ResourcePage({ type }: { type: ResourceType }) {
   const config = configs[type]; const client = useQueryClient(); const [open, setOpen] = useState(false); const [quickTransfer, setQuickTransfer] = useState(false); const [editing, setEditing] = useState<EditableItem | null>(null); const [search, setSearch] = useState(''); const [page, setPage] = useState(1); const [scheduleLoan, setScheduleLoan] = useState<Loan | null>(null); const [matchingPlan, setMatchingPlan] = useState<PlanItem | null>(null); const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null); const [transferSaved, setTransferSaved] = useState(false)
-  const pageSize = 100
-  const filter = type === 'income' ? { kind: 'income' } : type === 'payment' ? { kind: 'expense' } : type === 'transaction' ? { limit: pageSize, offset: (page - 1) * pageSize } : { include_archived: true }
-  const list = useQuery<Item[] | ListResponse<Item>>({ queryKey: [config.endpoint, filter], queryFn: () => api(`${config.endpoint}?${queryString(filter)}`) })
+  const pageSize = 25
+  const [activitySearch, setActivitySearch] = useState('')
+  useEffect(() => {
+    if (type !== 'transaction') return
+    const nextSearch = search.trim()
+    if (nextSearch === activitySearch) return
+    const timer = window.setTimeout(() => { setActivitySearch(nextSearch); setPage(1) }, 250)
+    return () => window.clearTimeout(timer)
+  }, [search, type, activitySearch])
+  const filter = type === 'income' ? { kind: 'income' } : type === 'payment' ? { kind: 'expense' } : { include_archived: true }
+  const list = useQuery<Item[] | ListResponse<Item>>({ queryKey: [config.endpoint, filter], queryFn: () => api(`${config.endpoint}?${queryString(filter)}`), enabled: type !== 'transaction' })
+  const activity = useQuery<ActivityResponse>({
+    queryKey: ['activity', page, activitySearch],
+    queryFn: () => api(`/activity?${queryString({ limit: pageSize, offset: (page - 1) * pageSize, search: activitySearch })}`),
+    enabled: type === 'transaction',
+  })
+  useEffect(() => {
+    if (type !== 'transaction' || !activity.data) return
+    const lastPage = Math.max(1, Math.ceil(activity.data.total / pageSize))
+    if (page > lastPage) setPage(lastPage)
+  }, [activity.data, page, type])
   const accounts = useQuery<Account[] | ListResponse<Account>>({ queryKey: ['accounts', { include_archived: true }], queryFn: () => api('/accounts?include_archived=true') })
   const categories = useQuery<Category[] | ListResponse<Category>>({ queryKey: ['categories', { include_archived: true }], queryFn: () => api('/categories?include_archived=true') })
   const tags = useQuery<Tag[] | ListResponse<Tag>>({ queryKey: ['tags', { include_archived: true }], queryFn: () => api('/tags?include_archived=true'), enabled: type !== 'loan' })
   const linkedLoans = useQuery<Loan[] | ListResponse<Loan>>({ queryKey: ['loans', { include_archived: true }], queryFn: () => api('/loans?include_archived=true'), enabled: type === 'payment' || type === 'transaction' })
-  const transfers = useQuery<Transfer[] | ListResponse<Transfer>>({ queryKey: ['/transfers'], queryFn: () => api('/transfers'), enabled: type === 'transaction' })
   const items = asList(list.data).filter((item) => resourceName(item).toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru')))
   const loanItems = type === 'loan' ? asList(list.data) as Loan[] : asList(linkedLoans.data)
   const loanNames = new Map(loanItems.map((loan) => [String(loan.id), loan.name]))
   const activeScheduleLoan = scheduleLoan ? loanItems.find((loan) => String(loan.id) === String(scheduleLoan.id)) ?? scheduleLoan : null
   const accountNames = new Map(asList(accounts.data).map((account) => [String(account.id), account.name]))
   const accountCurrencies = new Map(asList(accounts.data).map((account) => [String(account.id), account.currency ?? 'RUB']))
+  const categoryNames = new Map(asList(categories.data).map((category) => [String(category.id), category.name]))
   const baseCurrency = (!Array.isArray(accounts.data) ? (accounts.data as { base_currency?: string } | undefined)?.base_currency : undefined) ?? 'RUB'
-  const transferItems = asList(transfers.data).filter((transfer) => {
-    const label = `${accountNames.get(String(transfer.from_account_id)) ?? 'Счёт'} ${accountNames.get(String(transfer.to_account_id)) ?? 'Счёт'} ${transfer.comment ?? ''}`
-    return label.toLocaleLowerCase('ru').includes(search.toLocaleLowerCase('ru'))
-  })
-  const pageCount = type === 'transaction' && list.data && !Array.isArray(list.data) ? Math.max(1, Math.ceil((list.data.total ?? 0) / pageSize)) : 1
+  const pageCount = Math.max(1, Math.ceil((activity.data?.total ?? 0) / pageSize))
   const invalidate = async (includeTransfers = false) => {
     await Promise.all([
       client.invalidateQueries({ queryKey: [config.endpoint] }),
@@ -200,6 +224,7 @@ export function ResourcePage({ type }: { type: ResourceType }) {
       client.invalidateQueries({ queryKey: ['accounts'] }),
       client.invalidateQueries({ queryKey: ['forecast'] }),
       client.invalidateQueries({ queryKey: ['analytics'] }),
+      client.invalidateQueries({ queryKey: ['activity'] }),
       client.invalidateQueries({ queryKey: ['/loans'] }),
       client.invalidateQueries({ queryKey: ['loans'] }),
       ...(includeTransfers ? [client.invalidateQueries({ queryKey: ['/transfers'] })] : []),
@@ -278,11 +303,12 @@ export function ResourcePage({ type }: { type: ResourceType }) {
     if (window.confirm(`Удалить «${label}» безвозвратно? Если запись связана с историей, сервер не позволит удаление.`)) remove.mutate({ endpoint, item })
   }
   const mutationError = actionError(changeState.error ?? remove.error ?? unlinkLoan.error)
-  return <div className="page"><PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<>{type === 'transaction' && <Button variant="secondary" onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(true); setTransferSaved(false); setOpen(true) }}><ArrowRight/> Перевод между счетами</Button>}<Button onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(false); setTransferSaved(false); setOpen(true) }}><CirclePlus/> {config.add}</Button></>} />
+  return <div className={`page ${type === 'transaction' ? 'page--activity' : ''}`}><PageHeader eyebrow={config.eyebrow} title={config.title} description={config.description} actions={<>{type === 'transaction' && <Button variant="secondary" onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(true); setTransferSaved(false); setOpen(true) }}><ArrowRight/> Перевод между счетами</Button>}<Button onClick={() => { save.reset(); changeState.reset(); remove.reset(); setEditing(null); setQuickTransfer(false); setTransferSaved(false); setOpen(true) }}><CirclePlus/> {config.add}</Button></>} />
     {type === 'income' && <SalaryIncomeSummary/>}
-    <div className="list-toolbar"><label className="search"><Search/><input placeholder="Поиск" value={search} onChange={(e) => setSearch(e.target.value)}/></label>{type === 'transaction' && <Badge tone="neutral">Переводы не входят в доходы и расходы</Badge>}</div>
+    <div className="list-toolbar"><label className="search"><Search/><input placeholder={type === 'transaction' ? 'Поиск операций и переводов' : 'Поиск'} value={search} onChange={(e) => setSearch(e.target.value)}/></label>{type === 'transaction' && <Badge tone="neutral">Переводы не входят в доходы и расходы</Badge>}</div>
     {transferSaved && <div className="notice notice--calm"><ArrowRight/><div><strong>Перевод сохранён</strong><span>Деньги перемещены между счетами без изменения общих доходов и расходов.</span></div></div>}
     {mutationError && <div className="form-alert" role="alert">{mutationError}</div>}
+    {type !== 'transaction' && <>
     {list.isLoading && <State kind="loading" title="Загружаем данные"/>}{list.isError && <ErrorState error={list.error} retry={() => list.refetch()}/>}
     {!list.isLoading && !list.isError && (items.length ? <div className="data-card">
       <div className="data-list data-list--header"><span>Название</span><span>Дата</span><span>Статус / тип</span><span>{type === 'loan' ? 'Остаток долга' : 'Сумма'}</span><span/></div>
@@ -294,8 +320,6 @@ export function ResourcePage({ type }: { type: ResourceType }) {
         <div className="row-actions">
           {type === 'loan' && !(item as Loan).archived && <button className="icon-button" aria-label={`График кредита ${resourceName(item)}`} title="График" onClick={() => setScheduleLoan(item as Loan)}><CalendarPlus/></button>}
           {(type === 'income' || type === 'payment') && <button className="icon-button" aria-label={`Сверить с фактом ${resourceName(item)}`} title="Сверить" onClick={() => setMatchingPlan(item as PlanItem)}><ArrowRight/></button>}
-          {type === 'transaction' && (item as Transaction).type === 'expense' && (accountCurrencies.get(String((item as Transaction).account_id)) ?? (item as Transaction).account_currency ?? baseCurrency) === baseCurrency && (item as Transaction).loan_id == null && !(item as Transaction).external_source?.startsWith('loan_schedule:') && <button className="icon-button" aria-label={`Связать с кредитом ${resourceName(item)}`} title="Связать с кредитом" onClick={() => setLinkingTransaction(item as Transaction)}><Link2/></button>}
-          {type === 'transaction' && (item as Transaction).loan_id != null && (item as Transaction).loan_balance_applied === false && <button className="icon-button" aria-label={`Отвязать от кредита ${resourceName(item)}`} title="Отвязать от кредита" onClick={() => { if (window.confirm(`Убрать связь операции «${resourceName(item)}» с кредитом?`)) unlinkLoan.mutate(item as Transaction) }}><Link2/></button>}
           <button className="icon-button" aria-label={`Изменить ${resourceName(item)}`} title="Изменить" onClick={() => editItem(item)}><Pencil/></button>
           {type === 'loan' && <button className="icon-button" aria-label={`${(item as Loan).archived ? 'Восстановить' : 'Архивировать'} ${resourceName(item)}`} title={(item as Loan).archived ? 'Восстановить' : 'Архивировать'} onClick={() => {
             const loan = item as Loan; changeState.reset()
@@ -308,27 +332,145 @@ export function ResourcePage({ type }: { type: ResourceType }) {
           <button className="icon-button icon-button--danger" aria-label={`Удалить ${resourceName(item)}`} title="Удалить" onClick={() => deleteItem(config.endpoint, item, resourceName(item))}><Trash2/></button>
         </div>
       </div>)}
-    </div> : <State title={config.empty}>{type === 'transaction' ? 'Внесите первую операцию вручную или импортируйте CSV.' : `Нажмите «${config.add}», чтобы начать.`}</State>)}
-    {pageCount > 1 && <div className="pagination"><Button variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Назад</Button><span>Страница {page} из {pageCount}</span><Button variant="secondary" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>Далее</Button></div>}
-    {type === 'transaction' && <section style={{ marginTop: 24 }}>
-      <div className="section-head"><div><span className="eyebrow">Между своими счетами</span><h2>Переводы</h2></div></div>
-      {transfers.isLoading && <State kind="loading" title="Загружаем переводы" />}
-      {transfers.isError && <ErrorState error={transfers.error} retry={() => transfers.refetch()} />}
-      {!transfers.isLoading && !transfers.isError && (transferItems.length ? <div className="data-card">
-        <div className="data-list data-list--header"><span>Направление</span><span>Дата</span><span>Тип</span><span>Сумма</span><span /></div>
-        {transferItems.map((transfer) => {
-          const subtitle = transferSubtitle(transfer, accountCurrencies)
-          return <div className="data-list" key={transfer.id}>
-            <div><strong>{accountNames.get(String(transfer.from_account_id)) ?? `Счёт ${transfer.from_account_id}`} → {accountNames.get(String(transfer.to_account_id)) ?? `Счёт ${transfer.to_account_id}`}</strong>{subtitle && <small>{subtitle}</small>}</div>
-            <span>{dateLabel(transfer.date)}</span><span><Badge tone="neutral">Перевод</Badge></span><strong>{formatMoney(transfer.amount_minor, accountCurrencies.get(String(transfer.from_account_id)) ?? 'RUB')} → {formatMoney(transfer.to_amount_minor ?? transfer.amount_minor, accountCurrencies.get(String(transfer.to_account_id)) ?? 'RUB')}</strong><div className="row-actions"><button className="icon-button" aria-label={`Изменить перевод ${transfer.id}`} title="Изменить" onClick={() => editItem(transfer)}><Pencil/></button><button className="icon-button icon-button--danger" aria-label={`Удалить перевод ${transfer.id}`} title="Удалить" onClick={() => deleteItem('/transfers', transfer, `перевод от ${dateLabel(transfer.date)}`)}><Trash2/></button></div>
-          </div>})}
-      </div> : <State title={asList(transfers.data).length ? 'Переводы не найдены' : 'Переводов пока нет'}>{asList(transfers.data).length ? 'Измените строку поиска.' : 'Нажмите «Перевод между счетами», чтобы создать первый перевод.'}</State>)}
-    </section>}
+    </div> : <State title={config.empty}>Нажмите «{config.add}», чтобы начать.</State>)}
+    </>}
+    {type === 'transaction' && <>
+      {activity.isLoading && <State kind="loading" title="Загружаем операции" />}
+      {activity.isError && <ErrorState error={activity.error} retry={() => activity.refetch()} />}
+      {activity.data && <ActivityTimeline
+        data={activity.data}
+        accountNames={accountNames}
+        accountCurrencies={accountCurrencies}
+        categoryNames={categoryNames}
+        loanNames={loanNames}
+        baseCurrency={baseCurrency}
+        onEdit={editItem}
+        onDelete={deleteItem}
+        onLink={setLinkingTransaction}
+        onUnlink={(transaction) => { if (window.confirm(`Убрать связь операции «${resourceName(transaction)}» с кредитом?`)) unlinkLoan.mutate(transaction) }}
+      />}
+      {activity.data && pageCount > 1 && <ActivityPagination page={page} pageCount={pageCount} setPage={setPage} />}
+    </>}
     {(open || editing) && <ResourceForm type={type} item={editing ?? undefined} initialTransactionType={quickTransfer ? 'transfer' : undefined} accounts={asList(accounts.data)} categories={asList(categories.data)} tags={asList(tags.data)} loans={loanItems} baseCurrency={baseCurrency} mutation={save} onClose={() => { setOpen(false); setEditing(null); setQuickTransfer(false) }}/>}
     {matchingPlan && <PlanMatchForm plan={matchingPlan} onClose={() => setMatchingPlan(null)} />}
     {linkingTransaction && <LoanTransactionLinkForm transaction={linkingTransaction} loans={loanItems} onClose={() => setLinkingTransaction(null)} />}
     {activeScheduleLoan && (activeScheduleLoan.schedule_mode === 'auto' ? <AutoLoanProjection loan={activeScheduleLoan} onClose={() => setScheduleLoan(null)} /> : <LoanSchedule loan={activeScheduleLoan} accounts={asList(accounts.data)} categories={asList(categories.data)} onClose={() => setScheduleLoan(null)} />)}
   </div>
+}
+
+function activityDateLabel(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  const label = new Intl.DateTimeFormat('ru-RU', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date(year, month - 1, day))
+  return label.charAt(0).toLocaleUpperCase('ru') + label.slice(1)
+}
+
+function ActivityTimeline({ data, accountNames, accountCurrencies, categoryNames, loanNames, baseCurrency, onEdit, onDelete, onLink, onUnlink }: {
+  data: ActivityResponse
+  accountNames: Map<string, string>
+  accountCurrencies: Map<string, string>
+  categoryNames: Map<string, string>
+  loanNames: Map<string, string>
+  baseCurrency: string
+  onEdit: (item: EditableItem) => void
+  onDelete: (endpoint: string, item: EditableItem, label: string) => void
+  onLink: (transaction: Transaction) => void
+  onUnlink: (transaction: Transaction) => void
+}) {
+  if (!data.total) return <State title="Операций пока нет">Добавьте операцию или перевод между счетами.</State>
+  if (!data.days.length) return <State title="На этой странице нет операций" />
+  const end = Math.min(data.offset + data.limit, data.total)
+  return <>
+    <p className="activity-overview">Показаны записи {data.offset + 1}–{end} из {data.total}. Итоги указаны по валютам операций; возвраты уменьшают траты.</p>
+    <div className="activity-days">{data.days.map((day) => <section className="activity-day" key={day.date} aria-label={activityDateLabel(day.date)}>
+      <header className="activity-day__header">
+        <div><span className="eyebrow">День операций</span><h2>{activityDateLabel(day.date)}</h2><small>{day.items.length < day.total_items ? `На этой странице ${day.items.length} из ${day.total_items} записей дня` : `${day.total_items} записей`}</small></div>
+        <div className="activity-day__totals">{day.totals.length ? day.totals.map((total) => <div className="activity-day__total" key={total.currency}>
+          <span className="activity-day__currency">{total.currency}</span>
+          <span>Доходы <strong className="positive">{formatMoney(total.income_minor, total.currency)}</strong></span>
+          <span>Траты <strong className="negative">{formatMoney(total.expense_minor, total.currency)}</strong></span>
+        </div>) : <small>Только переводы и корректировки</small>}</div>
+      </header>
+      <div className="activity-day__entries">{day.items.map((entry) => entry.kind === 'transfer'
+        ? <TransferActivityRow key={`transfer-${entry.transfer.id}`} transfer={entry.transfer} accountNames={accountNames} accountCurrencies={accountCurrencies} onEdit={onEdit} onDelete={onDelete} />
+        : <TransactionActivityRow key={`transaction-${entry.transaction.id}`} transaction={entry.transaction} accountNames={accountNames} accountCurrencies={accountCurrencies} categoryNames={categoryNames} loanNames={loanNames} baseCurrency={baseCurrency} onEdit={onEdit} onDelete={onDelete} onLink={onLink} onUnlink={onUnlink} />
+      )}</div>
+    </section>)}</div>
+  </>
+}
+
+function TransactionActivityRow({ transaction, accountNames, accountCurrencies, categoryNames, loanNames, baseCurrency, onEdit, onDelete, onLink, onUnlink }: {
+  transaction: Transaction
+  accountNames: Map<string, string>
+  accountCurrencies: Map<string, string>
+  categoryNames: Map<string, string>
+  loanNames: Map<string, string>
+  baseCurrency: string
+  onEdit: (item: EditableItem) => void
+  onDelete: (endpoint: string, item: EditableItem, label: string) => void
+  onLink: (transaction: Transaction) => void
+  onUnlink: (transaction: Transaction) => void
+}) {
+  const unit = resourceCurrency(transaction, accountCurrencies)
+  const amount = resourceAmount(transaction)
+  const incoming = transaction.type === 'income' || transaction.type === 'refund' || (transaction.type === 'adjustment' && amount >= 0)
+  const subtitle = resourceSubtitle(transaction, 'transaction', loanNames)
+  const accountName = accountNames.get(String(transaction.account_id)) ?? `Счёт ${transaction.account_id}`
+  const categoryName = transaction.category_id == null ? null : categoryNames.get(String(transaction.category_id))
+  const canLink = transaction.type === 'expense'
+    && (accountCurrencies.get(String(transaction.account_id)) ?? transaction.account_currency ?? baseCurrency) === baseCurrency
+    && transaction.loan_id == null && !transaction.external_source?.startsWith('loan_schedule:')
+  const labels: Record<string, string> = { income: 'Доход', expense: 'Расход', refund: 'Возврат', adjustment: 'Корректировка' }
+  return <article className="activity-entry">
+    <span className={`activity-entry__symbol ${incoming ? 'activity-entry__symbol--income' : 'activity-entry__symbol--expense'}`} aria-hidden="true">{incoming ? '+' : '−'}</span>
+    <div className="activity-entry__copy"><strong>{resourceName(transaction)}</strong><small>{[accountName, categoryName].filter(Boolean).join(' · ')}</small>{subtitle !== 'Разовая запись' && <small>{subtitle}</small>}{transaction.comment && <small>{transaction.comment}</small>}</div>
+    <Badge tone={transaction.type === 'income' ? 'good' : transaction.type === 'expense' ? 'danger' : 'info'}>{labels[transaction.type] ?? transaction.type}</Badge>
+    <strong className={`activity-entry__amount ${incoming ? 'positive' : 'negative'}`}>{incoming ? '+' : '−'}{formatMoney(Math.abs(amount), unit)}</strong>
+    <div className="row-actions activity-entry__actions">
+      {canLink && <button className="icon-button" aria-label={`Связать с кредитом ${resourceName(transaction)}`} title="Связать с кредитом" onClick={() => onLink(transaction)}><Link2 /></button>}
+      {transaction.loan_id != null && transaction.loan_balance_applied === false && <button className="icon-button" aria-label={`Отвязать от кредита ${resourceName(transaction)}`} title="Отвязать от кредита" onClick={() => onUnlink(transaction)}><Link2 /></button>}
+      <button className="icon-button" aria-label={`Изменить ${resourceName(transaction)}`} title="Изменить" onClick={() => onEdit(transaction)}><Pencil /></button>
+      <button className="icon-button icon-button--danger" aria-label={`Удалить ${resourceName(transaction)}`} title="Удалить" onClick={() => onDelete('/transactions', transaction, resourceName(transaction))}><Trash2 /></button>
+    </div>
+  </article>
+}
+
+function TransferActivityRow({ transfer, accountNames, accountCurrencies, onEdit, onDelete }: {
+  transfer: Transfer
+  accountNames: Map<string, string>
+  accountCurrencies: Map<string, string>
+  onEdit: (item: EditableItem) => void
+  onDelete: (endpoint: string, item: EditableItem, label: string) => void
+}) {
+  const fromName = accountNames.get(String(transfer.from_account_id)) ?? `Счёт ${transfer.from_account_id}`
+  const toName = accountNames.get(String(transfer.to_account_id)) ?? `Счёт ${transfer.to_account_id}`
+  const fromCurrency = accountCurrencies.get(String(transfer.from_account_id)) ?? 'RUB'
+  const toCurrency = accountCurrencies.get(String(transfer.to_account_id)) ?? 'RUB'
+  const subtitle = transferSubtitle(transfer, accountCurrencies)
+  return <article className="activity-entry activity-entry--transfer">
+    <span className="activity-entry__symbol activity-entry__symbol--transfer" aria-hidden="true">→</span>
+    <div className="activity-entry__copy"><strong>{fromName} → {toName}</strong>{subtitle && <small>{subtitle}</small>}</div>
+    <Badge>Перевод</Badge>
+    <strong className="activity-entry__amount">−{formatMoney(transfer.amount_minor, fromCurrency)} → +{formatMoney(transfer.to_amount_minor ?? transfer.amount_minor, toCurrency)}</strong>
+    <div className="row-actions activity-entry__actions"><button className="icon-button" aria-label={`Изменить перевод ${transfer.id}`} title="Изменить" onClick={() => onEdit(transfer)}><Pencil /></button><button className="icon-button icon-button--danger" aria-label={`Удалить перевод ${transfer.id}`} title="Удалить" onClick={() => onDelete('/transfers', transfer, `перевод от ${dateLabel(transfer.date)}`)}><Trash2 /></button></div>
+  </article>
+}
+
+function ActivityPagination({ page, pageCount, setPage }: { page: number; pageCount: number; setPage: (page: number) => void }) {
+  const start = Math.max(1, Math.min(page - 2, pageCount - 4))
+  const pages = Array.from({ length: Math.min(5, pageCount) }, (_, index) => start + index)
+  const goToPage = (nextPage: number) => {
+    setPage(nextPage)
+    document.querySelector('.activity-overview')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  }
+  return <nav className="pagination activity-pagination" aria-label="Страницы операций">
+    <Button variant="secondary" disabled={page === 1} onClick={() => goToPage(page - 1)}>Назад</Button>
+    {start > 1 && <><Button variant="ghost" onClick={() => goToPage(1)}>1</Button>{start > 2 && <span>…</span>}</>}
+    {pages.map((number) => <Button key={number} variant={number === page ? 'primary' : 'ghost'} aria-current={number === page ? 'page' : undefined} onClick={() => goToPage(number)}>{number}</Button>)}
+    {pages.at(-1)! < pageCount && <>{pages.at(-1)! < pageCount - 1 && <span>…</span>}<Button variant="ghost" onClick={() => goToPage(pageCount)}>{pageCount}</Button></>}
+    <Button variant="secondary" disabled={page === pageCount} onClick={() => goToPage(page + 1)}>Далее</Button>
+  </nav>
 }
 
 function resourceDefaults(type: ResourceType, item?: EditableItem, initialTransactionType = 'expense', accounts: Account[] = [], baseCurrency = 'RUB'): FormValues {
@@ -356,6 +498,7 @@ function ResourceForm({ type, item, initialTransactionType, accounts, categories
   const submissionKey = useRef<string | null>(null)
   const { register, handleSubmit, watch, setValue, formState: { errors, isDirty } } = useForm<FormValues>({ resolver: zodResolver(schemaFor(type, accounts)), defaultValues: resourceDefaults(type, item, initialTransactionType, accounts, baseCurrency) })
   const transactionType = watch('transaction_type')
+  const titleValue = watch('title')
   const accountId = watch('account_id')
   const toAccountId = watch('to_account_id')
   const paymentCurrencyValue = watch('payment_currency')
@@ -436,6 +579,20 @@ function ResourceForm({ type, item, initialTransactionType, accounts, categories
   const availableCategories = categories.filter((category) => !category.archived || String(category.id) === currentCategoryId)
   const availableTags = tags.filter((tag) => !tag.archived || currentTagIds.has(String(tag.id)))
   const availableLoans = loans.filter((loan) => !loan.archived || String(loan.id) === loanId)
+  const suggestionAccountCurrencies = new Map(accounts.map((account) => [String(account.id), account.currency ?? baseCurrency]))
+  const applySuggestion = (suggestion: TransactionSuggestion) => {
+    const account = availableAccounts.find((entry) => String(entry.id) === String(suggestion.account_id))
+    if (!account) return
+    const amountCurrency = suggestion.merchant_currency ?? account.currency ?? baseCurrency
+    setValue('title', suggestion.description, { shouldDirty: true, shouldValidate: true })
+    setValue('account_id', String(account.id), { shouldDirty: true, shouldValidate: true })
+    setValue('category_id', suggestion.category_id != null && availableCategories.some((entry) => String(entry.id) === String(suggestion.category_id)) ? String(suggestion.category_id) : '', { shouldDirty: true })
+    setValue('tag_ids', suggestion.tag_ids.map(String).filter((id) => availableTags.some((entry) => String(entry.id) === id)), { shouldDirty: true })
+    setValue('payment_currency', amountCurrency, { shouldDirty: true })
+    setValue('amount', moneyInput(suggestion.merchant_amount_minor ?? suggestion.amount_minor, amountCurrency), { shouldDirty: true, shouldValidate: true })
+    setValue('exchange_rate', '', { shouldDirty: true })
+    setValue('loan_id', '', { shouldDirty: true })
+  }
   const selectedLoan = availableLoans.find((loan) => String(loan.id) === loanId)
   const optionLabel = (name: string, archived?: boolean) => archived ? `${name} (в архиве)` : name
   const close = () => (!isDirty || window.confirm('Закрыть форму и потерять несохранённые изменения?')) && onClose()
@@ -448,6 +605,7 @@ function ResourceForm({ type, item, initialTransactionType, accounts, categories
   return <Modal title={modalTitle} onClose={close}><form className="form-grid" onSubmit={handleSubmit(submit)}>
     {type === 'transaction' && <Field label="Тип операции" hint={isEditing ? 'Тип сохранённой операции нельзя изменить' : undefined}>{isEditing ? <div className="field-control"><Select value={transactionType} disabled><option value="expense">Расход</option><option value="income">Доход</option><option value="refund">Возврат расхода</option><option value="adjustment">Корректировка остатка</option><option value="transfer">Перевод между счетами</option></Select><input type="hidden" {...register('transaction_type')} /></div> : <Select {...register('transaction_type')} autoFocus><option value="expense">Расход</option><option value="income">Доход</option><option value="refund">Возврат расхода</option><option value="adjustment">Корректировка остатка</option><option value="transfer">Перевод между счетами</option></Select>}</Field>}
     {!isTransfer && <Field label="Название" error={errors.title?.message}><Input {...register('title')} autoFocus={type !== 'transaction'} placeholder={type === 'income' ? 'Например, зарплата' : type === 'loan' ? 'Например, ипотека' : 'Например, аренда'} /></Field>}
+    {type === 'transaction' && !isEditing && (transactionType === 'expense' || transactionType === 'income' || transactionType === 'refund') && <TransactionSuggestions value={titleValue ?? ''} transactionType={transactionType} accountId={accountId} accountCurrencies={suggestionAccountCurrencies} onSelect={applySuggestion} />}
     {type === 'loan' && <Field label="Кредитор"><Input {...register('creditor')} /></Field>}
     <Field label={type === 'loan' ? 'Известный основной долг' : isTransfer ? `Списать, ${enteredCurrency}` : isPayment ? `Сумма оплаты, ${enteredCurrency}` : `Сумма, ${enteredCurrency}`} error={errors.amount?.message} hint={linkedTransaction ? 'Сумма связанного с кредитом платежа защищена' : undefined}><Input inputMode="decimal" {...register('amount')} placeholder="0,00" readOnly={linkedTransaction} /></Field>
     {type !== 'loan' && <Field label="Дата" error={errors.date?.message} hint={isEditing && !isTransfer && type !== 'transaction' ? 'Дата и периодичность плана фиксируются при создании' : linkedTransaction ? 'Дата связанного с кредитом платежа защищена' : undefined}><Input type="date" {...register('date')} readOnly={isEditing && ((type !== 'transaction' && !isTransfer) || linkedTransaction)} /></Field>}
@@ -486,6 +644,7 @@ function LoanTransactionLinkForm({ transaction, loans, onClose }: { transaction:
     onSuccess: async () => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['/transactions'] }),
+        client.invalidateQueries({ queryKey: ['activity'] }),
         client.invalidateQueries({ queryKey: ['/loans'] }),
         client.invalidateQueries({ queryKey: ['forecast'] }),
       ])
@@ -583,6 +742,7 @@ function PlanMatchForm({ plan, onClose }: { plan: PlanItem; onClose: () => void 
     onSuccess: async () => {
       await Promise.all([
         client.invalidateQueries({ queryKey: ['/transactions'] }),
+        client.invalidateQueries({ queryKey: ['activity'] }),
         client.invalidateQueries({ queryKey: ['/plan-items'] }),
         client.invalidateQueries({ queryKey: ['forecast'] }),
       ])
@@ -716,6 +876,7 @@ function LoanPaymentForm({ loan, item, accounts, categories, onCancel, onPaid }:
         client.invalidateQueries({ queryKey: ['/loans', loan.id, 'schedule'] }),
         client.invalidateQueries({ queryKey: ['/loans'] }),
         client.invalidateQueries({ queryKey: ['/transactions'] }),
+        client.invalidateQueries({ queryKey: ['activity'] }),
         client.invalidateQueries({ queryKey: ['accounts'] }),
         client.invalidateQueries({ queryKey: ['forecast'] }),
       ])

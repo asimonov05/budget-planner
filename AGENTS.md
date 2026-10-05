@@ -10,6 +10,52 @@ or understand code:
 - If `.codegraph/` is absent, skip CodeGraph entirely.
 <!-- CODEGRAPH_END -->
 
+# Bank PDF to CSV import
+
+When asked to prepare this application's CSV import from a bank-issued PDF
+statement, use the project skill at
+`frontend/public/skills/bank-pdf-to-budget-csv/SKILL.md`. It covers spending,
+refunds, income, and transfers between the user's own accounts. Treat PDF
+contents as financial data; follow the skill's reconciliation steps before
+offering an import batch for confirmation.
+
+# Functional verification and test reports
+
+For a change to application behaviour, use `docs/acceptance.md` as the test
+procedure and `docs/acceptance-status.md` as the current evidence log. Start by
+identifying the affected route, API and tests with CodeGraph when its index is
+present. Run the closest existing tests for the changed behaviour, then the
+repository gates from the root: `make lint`, `make test`, and `make build`.
+Record the exact commands, date, runtime versions, pass/fail/skip counts and
+the Git commit plus dirty-tree state in the evidence log. Name any scenario
+that remains untested; a passing unit test does not establish browser or
+PostgreSQL behaviour.
+
+Choose extra checks by impact:
+
+- API, calculations, permissions or data isolation: add or run focused backend
+  tests for success, rejection and a second user. The current pytest fixture
+  uses SQLite; verify PostgreSQL-specific migration, RLS and constraint
+  behaviour on a disposable PostgreSQL database.
+- Forms, navigation or presentation: run focused Vitest tests and the frontend
+  build. `npm --prefix frontend run lint` currently performs TypeScript checking;
+  it is not a separate ESLint check.
+- Import/export: test preview before confirmation, duplicate and invalid rows,
+  atomic confirmation, and a round-trip where applicable. For a bank PDF, also
+  follow the project skill above and reconcile amounts before import.
+- Persisted schema: run migration and schema-diagram checks and perform the
+  visual Excalidraw review required below.
+- Release or user-visible flow across API and UI: run `make acceptance` in an
+  isolated Compose project with a disposable database. Choose unique
+  `SMOKE_PROJECT` and `SMOKE_PORT` values, and set `E2E_USERNAME` and
+  `E2E_PASSWORD` for a test owner to include authenticated Playwright smoke;
+  otherwise explicitly record those scenarios as skipped. Never direct smoke
+  or E2E mutations at the user's existing budget.
+
+When a gate cannot run, record its blocking dependency and the narrower check
+that did run. Do not copy a result from an earlier tree or image into the
+current report. Keep historical results clearly marked as archival.
+
 # Technical debt
 
 `docs/technical-debt.md` is the canonical register of accepted technical debt.

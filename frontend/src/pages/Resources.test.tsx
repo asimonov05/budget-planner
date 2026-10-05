@@ -1,10 +1,50 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ResourcePage } from './Resources'
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+}
+
+function activityFetch(fetchMock: typeof fetch) {
+  // Reuse the form tests' transaction and transfer fixtures in the combined feed.
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (!path.startsWith('/api/v1/activity?')) return fetchMock(input, init)
+    const params = new URL(path, 'http://testserver').searchParams
+    const limit = Number(params.get('limit') ?? 25)
+    const offset = Number(params.get('offset') ?? 0)
+    const [transactionResponse, transferResponse] = await Promise.all([
+      fetchMock('/api/v1/transactions?limit=100&offset=0', { method: 'GET', credentials: 'include' }),
+      fetchMock('/api/v1/transfers', { method: 'GET', credentials: 'include' }),
+    ])
+    const transactions = (await transactionResponse.json()).items as Array<Record<string, unknown>>
+    const transfers = (await transferResponse.json()).items as Array<Record<string, unknown>>
+    const all = [
+      ...transactions.map((transaction) => ({ kind: 'transaction' as const, date: String(transaction.date), transaction })),
+      ...transfers.map((transfer) => ({ kind: 'transfer' as const, date: String(transfer.date), transfer })),
+    ].sort((a, b) => b.date.localeCompare(a.date))
+    const page = all.slice(offset, offset + limit)
+    const days = Array.from(new Set(page.map((entry) => entry.date))).map((date) => {
+      const dayTransactions = transactions.filter((transaction) => transaction.date === date)
+      const totals = new Map<string, { currency: string; income_minor: number; expense_minor: number }>()
+      dayTransactions.forEach((transaction) => {
+        const currency = String(transaction.merchant_currency ?? transaction.account_currency ?? 'RUB')
+        const amount = Number(transaction.merchant_amount_minor ?? transaction.amount_minor)
+        const value = totals.get(currency) ?? { currency, income_minor: 0, expense_minor: 0 }
+        if (transaction.type === 'income') value.income_minor += amount
+        if (transaction.type === 'expense') value.expense_minor += amount
+        if (transaction.type === 'refund') value.expense_minor -= amount
+        if (['income', 'expense', 'refund'].includes(String(transaction.type))) totals.set(currency, value)
+      })
+      return {
+        date, total_items: all.filter((entry) => entry.date === date).length,
+        totals: [...totals.values()], items: page.filter((entry) => entry.date === date),
+      }
+    })
+    return jsonResponse({ days, total: all.length, limit, offset })
+  }
 }
 
 describe('transaction resource integration', () => {
@@ -26,7 +66,7 @@ describe('transaction resource integration', () => {
       if (path === '/api/v1/loans?include_archived=true') return jsonResponse({ items: [{ id: 7, name: 'Ипотека', schedule_mode: 'auto', archived: false }], total: 1 })
       throw new Error(`Unexpected request: ${path}`)
     })
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', activityFetch(fetchMock))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
@@ -39,8 +79,7 @@ describe('transaction resource integration', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
 
-    await screen.findByText('Операций пока нет')
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/transactions?limit=100&offset=0', expect.objectContaining({ method: 'GET' }))
+    await screen.findByText('Карта → Накопительный')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
 
@@ -69,11 +108,77 @@ describe('transaction resource integration', () => {
     expect(new Headers(request?.headers).get('Idempotency-Key')).toMatch(/^transaction-/)
   })
 
+  it('fills a new operation from a similar fact while keeping its new date', async () => {
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/v1/transactions/suggestions?')) return jsonResponse({ items: [{
+        id: 41, description: 'Кофе', date: '2026-09-20', account_id: 3,
+        category_id: 4, amount_minor: 25_000, merchant_currency: null,
+        merchant_amount_minor: null, tag_ids: [6],
+      }] })
+      return original(input, init)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    await screen.findByText('Карта → Накопительный')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Коф' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-03' } })
+    const suggestions = await screen.findByRole('region', { name: 'Похожие операции' })
+    expect(screen.getByLabelText('Сумма оплаты, RUB')).toHaveValue('')
+    fireEvent.click(within(suggestions).getByRole('button', { name: /Кофе/ }))
+
+    expect(screen.getByLabelText('Название')).toHaveValue('Кофе')
+    expect(screen.getByLabelText('Сумма оплаты, RUB')).toHaveValue('250,00')
+    expect(screen.getByLabelText('Счёт')).toHaveValue('3')
+    expect(screen.getByLabelText('Категория')).toHaveValue('4')
+    expect(screen.getByLabelText('Дата')).toHaveValue('2026-10-03')
+    expect(Array.from((screen.getByLabelText('Теги') as HTMLSelectElement).selectedOptions).map((option) => option.value)).toEqual(['6'])
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')).toBe(true))
+    const [, request] = fetchMock.mock.calls.find(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')!
+    expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({
+      description: 'Кофе', amount_minor: 25_000, date: '2026-10-03',
+      account_id: 3, category_id: 4, tag_ids: [6],
+    }))
+  })
+
+  it('does not reuse a historical exchange rate from a similar purchase', async () => {
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/v1/transactions/suggestions?')) return jsonResponse({ items: [{
+        id: 42, description: 'Билет', date: '2026-09-20', account_id: 3,
+        category_id: 4, amount_minor: 180_000, merchant_currency: 'EUR',
+        merchant_amount_minor: 2_000, tag_ids: [],
+      }] })
+      if (path.startsWith('/api/v1/currencies/quote?')) return jsonResponse({ from_currency: 'EUR', to_currency: 'RUB', rate: '95', effective_date: '2026-10-03', source: 'CBR' })
+      return original(input, init)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+    await screen.findByText('Карта → Накопительный')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Бил' } })
+    fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-03' } })
+    const suggestions = await screen.findByRole('region', { name: 'Похожие операции' })
+    fireEvent.click(within(suggestions).getByRole('button', { name: /Билет/ }))
+
+    expect(screen.getByLabelText('Сумма оплаты, EUR')).toHaveValue('20,00')
+    expect(screen.getByLabelText('Курс: 1 EUR в RUB')).toHaveValue('')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(await screen.findByText(/Укажите положительный курс/)).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/v1/transactions' && init?.method === 'POST')).toBe(false)
+  })
+
   it('links a new actual loan payment with the early repayment strategy', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
 
-    await screen.findByText('Операций пока нет')
+    await screen.findByText('Карта → Накопительный')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Досрочное погашение' } })
     fireEvent.change(screen.getByLabelText(/^(Сумма|Списать)/), { target: { value: '10 000' } })
@@ -140,7 +245,7 @@ describe('transaction resource integration', () => {
 
     expect(await screen.findByText('Карта → Накопительный')).toBeInTheDocument()
     expect(screen.getByText('Перевод')).toBeInTheDocument()
-    expect(screen.getByText(/750\s*₽ → 750\s*₽/)).toBeInTheDocument()
+    expect(screen.getByText(/750\s*₽ → \+750\s*₽/)).toBeInTheDocument()
     expect(screen.queryByText(/^Курс:/)).not.toBeInTheDocument()
   })
 
@@ -164,7 +269,7 @@ describe('transaction resource integration', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
 
-    await screen.findByText('Операций пока нет')
+    await screen.findByText('Карта → Накопительный')
     fireEvent.click(screen.getByRole('button', { name: 'Перевод между счетами' }))
     expect(screen.getByLabelText('Тип операции')).toHaveValue('transfer')
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-09-22' } })
@@ -321,7 +426,7 @@ describe('archived directory references in resource forms', () => {
       })
       throw new Error(`Unexpected request: ${path}`)
     })
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', activityFetch(fetchMock))
   })
 
   afterEach(() => {
@@ -648,5 +753,73 @@ describe('loan schedule integration', () => {
     expect(screen.queryByRole('button', { name: 'График кредита Архивный кредит' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Восстановить Архивный кредит' })).toBeInTheDocument()
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/loans/8/schedule')).toBe(false)
+  })
+})
+
+describe('day-grouped activity timeline', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('shows 25 mixed entries per page, full day totals, and searches from the first page', async () => {
+    const date = '2026-10-02'
+    const olderDate = '2026-10-01'
+    const transaction = (id: number, onDate: string, type: string, description: string, amount_minor: number) => ({
+      kind: 'transaction' as const,
+      transaction: { id, type, description, amount_minor, date: onDate, account_id: 1, account_currency: 'RUB', version: 1 },
+    })
+    const transfer = (id: number, onDate: string, to_account_id: number) => ({
+      kind: 'transfer' as const,
+      transfer: { id, date: onDate, from_account_id: 1, to_account_id, amount_minor: 500, to_amount_minor: 500, exchange_rate: '1', version: 1 },
+    })
+    const recentTransactions = [transaction(1, date, 'income', 'Зарплата', 1_000),
+      ...Array.from({ length: 22 }, (_, index) => transaction(index + 2, date, 'expense', index === 0 ? 'Кофе' : `Расход ${index + 2}`, 100))]
+    const firstPage = {
+      days: [
+        { date, total_items: 24, totals: [{ currency: 'RUB', income_minor: 1_000, expense_minor: 2_200 }], items: [...recentTransactions, transfer(1, date, 2)] },
+        { date: olderDate, total_items: 2, totals: [{ currency: 'RUB', income_minor: 0, expense_minor: 500 }], items: [transaction(24, olderDate, 'expense', 'Вчерашний расход', 500)] },
+      ], total: 26, limit: 25, offset: 0,
+    }
+    const secondPage = {
+      days: [{ date: olderDate, total_items: 2, totals: [{ currency: 'RUB', income_minor: 0, expense_minor: 500 }], items: [transfer(2, olderDate, 3)] }],
+      total: 26, limit: 25, offset: 25,
+    }
+    fetchMock.mockImplementation(async (input) => {
+      const path = String(input)
+      if (path.startsWith('/api/v1/activity?')) {
+        const params = new URL(path, 'http://testserver').searchParams
+        if (params.get('search') === 'Кофе') return jsonResponse({ days: [{ date, total_items: 1, totals: [{ currency: 'RUB', income_minor: 0, expense_minor: 100 }], items: [recentTransactions[1]] }], total: 1, limit: 25, offset: 0 })
+        return jsonResponse(params.get('offset') === '25' ? secondPage : firstPage)
+      }
+      if (path === '/api/v1/accounts?include_archived=true') return jsonResponse({ items: [
+        { id: 1, name: 'Карта', currency: 'RUB' }, { id: 2, name: 'Доллары', currency: 'USD' }, { id: 3, name: 'Резерв', currency: 'RUB' },
+      ] })
+      if (path.includes('/categories?') || path.includes('/tags?') || path.includes('/loans?')) return jsonResponse({ items: [] })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    const currentDay = await screen.findByRole('region', { name: /2 октября/ })
+    const previousDay = screen.getByRole('region', { name: /1 октября/ })
+    expect(within(currentDay).getByText('Карта → Доллары')).toBeInTheDocument()
+    expect(within(currentDay.querySelector('.activity-day__totals')!).getByText(/22\s*₽/)).toBeInTheDocument()
+    expect(within(previousDay).getByText('На этой странице 1 из 2 записей дня')).toBeInTheDocument()
+    expect(within(previousDay.querySelector('.activity-day__totals')!).getByText(/5\s*₽/)).toBeInTheDocument()
+    expect(screen.getByText(/Показаны записи 1–25 из 26/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '2' }))
+    expect(await screen.findByText('Карта → Резерв')).toBeInTheDocument()
+    expect(screen.queryByText('Зарплата')).not.toBeInTheDocument()
+    expect(screen.getByText(/Показаны записи 26–26 из 26/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('Поиск операций и переводов'), { target: { value: 'Кофе' } })
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('search=%D0%9A%D0%BE%D1%84%D0%B5') && String(url).includes('offset=0'))).toBe(true))
+    expect(await screen.findByText('Кофе')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '2' })).not.toBeInTheDocument()
   })
 })
