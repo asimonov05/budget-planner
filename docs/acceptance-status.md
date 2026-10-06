@@ -1,5 +1,18 @@
 # Статус приемки
 
+## Подготовка версии `0.1.3`: 2026-10-06
+
+Проверено рабочее дерево поверх commit `664945b` с изменением версии в
+`backend/app/__init__.py`, `backend/pyproject.toml`, `backend/uv.lock`,
+`frontend/package.json` и `frontend/package-lock.json`. Функциональный код и
+схема базы не менялись. Среда: macOS arm64, Python 3.13.13, Node.js 26.4.0,
+Docker 29.4.3/29.2.1, Compose 5.1.3; Docker-сборка использовала Node 22.19.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Изолированная приемка | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-v013-20261006 SMOKE_PORT=18110 make acceptance` | [~] Ruff и TypeScript прошли; 127 backend и 84 frontend теста прошли; образ собран, PostgreSQL/migrate/ready прошли; 2 гостевых browser smoke прошли, 2 авторизованных пропущены | В disposable базе не создаётся владелец; контейнеры остановлены без удаления тома. Проверка VM и публикация release note ещё не входят в этот результат |
+
+
 ## Оформление бюджета по правилам Контура: 2026-10-06
 
 Проверено незакоммиченное дерево поверх
