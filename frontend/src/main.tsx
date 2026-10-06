@@ -7,6 +7,7 @@ import { initializeTheme, ThemeProvider } from './lib/theme'
 import './fonts.css'
 import './styles.css'
 import './themes.css'
+import './contour.css'
 
 initializeTheme()
 

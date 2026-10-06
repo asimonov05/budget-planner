@@ -11,11 +11,12 @@ import {
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
-export type ColorScheme = 'forest' | 'ocean' | 'plum' | 'amber'
-export type FontChoice = 'classic' | 'golos' | 'humanist' | 'book'
+export type ColorScheme = 'contour' | 'forest' | 'ocean' | 'plum' | 'amber'
+export type FontChoice = 'system' | 'classic' | 'golos' | 'humanist' | 'book'
 
-// The colour input needs a concrete value; these match the light accent in themes.css.
+// The colour input needs a concrete light-theme accent for each scheme.
 export const colorSchemeAccents: Record<ColorScheme, string> = {
+  contour: '#0066cc',
   forest: '#2f7354',
   ocean: '#196f7b',
   plum: '#815575',
@@ -31,10 +32,10 @@ const isThemePreference = (value: unknown): value is ThemePreference =>
   value === 'light' || value === 'dark' || value === 'system'
 
 const isColorScheme = (value: unknown): value is ColorScheme =>
-  value === 'forest' || value === 'ocean' || value === 'plum' || value === 'amber'
+  value === 'contour' || value === 'forest' || value === 'ocean' || value === 'plum' || value === 'amber'
 
 const isFontChoice = (value: unknown): value is FontChoice =>
-  value === 'classic' || value === 'golos' || value === 'humanist' || value === 'book'
+  value === 'system' || value === 'classic' || value === 'golos' || value === 'humanist' || value === 'book'
 
 function systemPrefersDark() {
   return typeof window !== 'undefined'
@@ -60,9 +61,9 @@ export function readColorScheme(
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
     const stored = source?.getItem(COLOR_SCHEME_STORAGE_KEY)
-    return isColorScheme(stored) ? stored : 'forest'
+    return isColorScheme(stored) ? stored : 'contour'
   } catch {
-    return 'forest'
+    return 'contour'
   }
 }
 
@@ -72,9 +73,9 @@ export function readFontChoice(
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
     const stored = source?.getItem(FONT_STORAGE_KEY)
-    return isFontChoice(stored) ? stored : 'golos'
+    return isFontChoice(stored) ? stored : 'system'
   } catch {
-    return 'golos'
+    return 'system'
   }
 }
 
@@ -134,8 +135,8 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue>({
   preference: 'system',
   resolvedTheme: 'light',
-  colorScheme: 'forest',
-  fontChoice: 'golos',
+  colorScheme: 'contour',
+  fontChoice: 'system',
   setPreference: () => undefined,
   setColorScheme: () => undefined,
   setFontChoice: () => undefined,

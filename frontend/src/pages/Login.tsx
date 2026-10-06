@@ -38,7 +38,7 @@ export function Login({ currentUser }: { currentUser?: User | null }) {
     <section className="login-form-wrap">
       <form className="login-form" onSubmit={handleSubmit((values) => login.mutate(values))}>
         <div className="login-icon"><LockKeyhole/></div>
-        <h2>{import.meta.env.BASE_URL === '/budget/' ? 'Вход в Контур' : 'Вход в бюджет'}</h2>
+        <h1>{import.meta.env.BASE_URL === '/budget/' ? 'Вход в Контур' : 'Вход в бюджет'}</h1>
         <p>Введите свой логин и пароль.</p>
         <Field label="Логин" error={errors.username?.message}>
           <Input autoComplete="username" autoFocus {...register('username')}/>

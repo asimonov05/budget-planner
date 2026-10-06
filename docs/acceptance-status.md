@@ -1,5 +1,31 @@
 # Статус приемки
 
+## Оформление бюджета по правилам Контура: 2026-10-06
+
+Проверено незакоммиченное дерево поверх
+`c322d7d844e3d2ea3ae09d80b7be137e42fff6e7`. Изменены интерфейсные файлы
+`frontend/src/components/{AuthIntro,Layout,ui}.tsx`, `frontend/src/lib/theme.tsx`,
+`frontend/src/pages/{Analytics,Dashboard,Login,Register,Settings}.tsx`, `frontend/src/main.tsx`, их
+тесты и этот журнал; добавлены `frontend/src/contour.css` и
+`frontend/src/components/ui.test.tsx`. Реестр долга дополнен пунктом TD-009.
+Среда: macOS arm64, Python 3.13.13, Node.js 26.4.0, npm 12.1.0,
+Docker 29.4.3, Compose 5.1.3, Playwright 1.63.0. Локальный Node отличается
+от рекомендуемой версии 22; Docker-сборка использовала Node 22.19.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Компоненты темы, настроек, меню и диалога | `npm --prefix frontend test -- src/lib/theme.test.tsx src/components/ui.test.tsx src/components/Layout.test.tsx src/pages/Settings.test.tsx` | [x] 4 файла, 14 тестов прошли; проверены новые значения по умолчанию и клавиатурное закрытие диалога с возвратом фокуса | Не измеряет реальные размеры и контраст в браузере |
+| Обзор и аналитика | `npm --prefix frontend test -- src/pages/Dashboard.test.tsx src/pages/Analytics.test.tsx src/components/ui.test.tsx src/lib/theme.test.tsx` | [x] 4 файла, 6 тестов прошли после разделения акцентного и смысловых цветов | Цвета проверяются отдельно визуально |
+| Repository gates | `make lint`, `make test`, `make build`; затем те же шаги внутри финального `make acceptance` | [x] Ruff и TypeScript прошли; 127 backend и 84 frontend теста прошли; Vite production build и `docker compose config --quiet` прошли на текущем дереве | Backend suite использует SQLite fixture; Vite предупредил о JS чанке 1 059,63 kB |
+| Повторная проверка перед push | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-push-20261006 SMOKE_PORT=18101 make acceptance` | [~] 127 backend и 84 frontend теста прошли; сборка и ready в новом Compose-проекте прошли; 2 browser smoke passed, 2 skipped | Изолированный контур не создаёт владельца; контейнеры остановлены без удаления тома |
+| Локальная визуальная проверка | `VITE_BASE_PATH=/budget/ npm run dev -- --host 127.0.0.1 --port 5174`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node /private/tmp/budget-visual-check.mjs` | [x] На подменённых API-ответах просмотрены обзор при 1280 и 320 CSS px, тёмная тема, настройки при 320 px и гостевой вход. Горизонтального переполнения и ошибок страницы нет | Временный скрипт и снимки находятся в `/private/tmp`; этот прогон не проверяет реальные финансовые данные, увеличение текста, повышенный контраст и все страницы |
+| Изолированная приёмка | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-contour-design-20261006-c SMOKE_PORT=18090 make acceptance` | [~] Docker-образ текущего дерева собран, отдельные PostgreSQL и migration job запущены, ready ответил; 2 гостевых Playwright-сценария прошли, 2 authenticated-сценария пропущены. Контейнеры остановлены без удаления тома | Тестовый владелец в отдельном проекте не создавался; `/private/tmp/cap-bin/curl` заменял отсутствующий системный `curl` |
+
+Для закрытия визуальной приёмки остаются ручная или автоматизированная проверка
+всех финансовых разделов с тестовым владельцем, увеличение текста до 200%,
+режим повышенной контрастности и проверка согласованного выбора темы после
+перехода в фотораздел.
+
 ## Существующий бюджет в локальном супераппе: 2026-10-06
 
 Рабочее дерево поверх commit `2e7143c37ddc6e217aa6fc8a7d9db5e59ecc510b`

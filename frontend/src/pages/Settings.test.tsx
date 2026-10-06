@@ -69,7 +69,8 @@ describe('settings directories', () => {
     expect(screen.getByRole('radio', { name: /Тёмная/ })).toBeChecked()
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
 
-    expect(screen.getByRole('radio', { name: /Лес/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /^Контур / })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Лес/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Океан/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Слива/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Янтарь/ })).toBeInTheDocument()
@@ -77,7 +78,8 @@ describe('settings directories', () => {
     expect(screen.getByRole('radio', { name: /Слива/ })).toBeChecked()
     expect(document.documentElement).toHaveAttribute('data-color-scheme', 'plum')
 
-    expect(screen.getByRole('radio', { name: /Golos Text/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Системный/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Golos Text/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Trebuchet MS/ })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /Georgia/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('radio', { name: /Georgia/ }))

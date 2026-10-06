@@ -77,7 +77,8 @@ const colorSchemeChoices: Array<{
   title: string
   description: string
 }> = [
-  { value: 'forest', title: 'Лес', description: 'Спокойный зелёный — базовая палитра.' },
+  { value: 'contour', title: 'Контур', description: 'Общий с фоторазделом синий акцент.' },
+  { value: 'forest', title: 'Лес', description: 'Спокойный зелёный акцент.' },
   { value: 'ocean', title: 'Океан', description: 'Холодные синие и бирюзовые оттенки.' },
   { value: 'plum', title: 'Слива', description: 'Мягкий фиолетовый акцент.' },
   { value: 'amber', title: 'Янтарь', description: 'Тёплые золотистые оттенки.' },
@@ -88,6 +89,7 @@ const fontChoices: Array<{
   title: string
   description: string
 }> = [
+  { value: 'system', title: 'Системный', description: 'Шрифт устройства, общий для сервисов Контура.' },
   { value: 'golos', title: 'Golos Text', description: 'Основной шрифт: ясные заголовки и удобные цифры.' },
   { value: 'classic', title: 'Классический', description: 'Нейтральный текст и заголовки с засечками.' },
   { value: 'humanist', title: 'Trebuchet MS', description: 'Мягкие формы и открытый рисунок букв.' },
@@ -121,7 +123,7 @@ function AppearanceSettings() {
         </label>
       })}
     </div>
-    <div className="appearance-subsection"><span className="eyebrow">Акцент</span><h3>Цветовая схема</h3><p>Меняет акцентные цвета, фон навигации и оттенок поверхностей.</p></div>
+    <div className="appearance-subsection"><span className="eyebrow">Акцент</span><h3>Цветовая схема</h3><p>Меняет цвет действий и выделений. Фоны остаются общими для сервисов Контура.</p></div>
     <div className="color-scheme-options" role="radiogroup" aria-label="Цветовая схема">
       {colorSchemeChoices.map(({ value, title, description }) => {
         const selected = colorScheme === value

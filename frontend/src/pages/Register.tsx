@@ -46,8 +46,8 @@ export function Register({ currentUser }: { currentUser?: User | null }) {
     <section className="login-form-wrap">
       <form className="login-form" onSubmit={handleSubmit((values) => create.mutate(values))}>
         <div className="login-icon"><UserPlus/></div>
-        <h2>Новый аккаунт</h2>
-        <p>{import.meta.env.BASE_URL === '/budget/' ? 'Один аккаунт для бюджета и photo-access.' : 'Создайте отдельный личный бюджет.'}</p>
+        <h1>Новый аккаунт</h1>
+        <p>{import.meta.env.BASE_URL === '/budget/' ? 'Один аккаунт для бюджета и фотораздела.' : 'Создайте отдельный личный бюджет.'}</p>
         <Field label="Логин" error={errors.username?.message} hint="Латиница, цифры, _, . и -; от 3 символов">
           <Input autoComplete="username" autoFocus {...register('username')}/>
         </Field>

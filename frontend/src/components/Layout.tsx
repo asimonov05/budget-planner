@@ -253,8 +253,8 @@ export function Layout() {
   return <div className={`app-shell ${compact ? 'is-compact' : ''}`}>
     <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
       <div className="brand">
-        <div className="brand-mark">К</div>
-        <div className="brand-copy"><strong>Контур</strong><span>Личный бюджет</span></div>
+        <div className="brand-mark"><WalletCards aria-hidden="true"/></div>
+        <div className="brand-copy"><strong>Бюджет</strong><span>Контур</span></div>
         <button className="mobile-close icon-button" aria-label="Закрыть меню" onClick={() => setMobileOpen(false)}><X/></button>
       </div>
       <nav aria-label="Основное меню">
@@ -272,6 +272,10 @@ export function Layout() {
         </NavLink>)}
       </nav>
       <div className="sidebar-bottom">
+        {me.data && <div className="sidebar-user" title={me.data.username}>
+          <span className="sidebar-user-avatar" aria-hidden="true">{me.data.username.slice(0, 1).toUpperCase()}</span>
+          <span className="sidebar-user-name">{me.data.username}</span>
+        </div>}
         <a className="sidebar-action" href="/" aria-label="Все приложения"><AppWindow aria-hidden="true"/><span>Все приложения</span></a>
         <button
           className="sidebar-action"
@@ -287,7 +291,7 @@ export function Layout() {
     </aside>
     {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="Закрыть меню"/>}
     <main>
-      <div className="mobile-bar"><button className="icon-button" aria-label="Открыть меню" onClick={() => setMobileOpen(true)}><Menu/></button><span>Контур</span></div>
+      <div className="mobile-bar"><button className="icon-button" aria-label="Открыть меню" onClick={() => setMobileOpen(true)}><Menu/></button><span>Бюджет</span></div>
       <Outlet/>
     </main>
     {menuOpen && <MenuEditor
