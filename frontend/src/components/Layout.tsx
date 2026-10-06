@@ -5,6 +5,7 @@ import {
   ArrowDown, ArrowUp, BarChart3, Bell, Bug, CalendarDays, ChevronRight, CreditCard,
   FileUp, Flag, GripVertical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose,
   PiggyBank, ReceiptText, Settings, SlidersHorizontal, TableProperties, WalletCards, X,
+  AppWindow,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import {
@@ -271,6 +272,7 @@ export function Layout() {
         </NavLink>)}
       </nav>
       <div className="sidebar-bottom">
+        <a className="sidebar-action" href="/" aria-label="Все приложения"><AppWindow aria-hidden="true"/><span>Все приложения</span></a>
         <button
           className="sidebar-action"
           aria-label="Настроить меню"

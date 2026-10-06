@@ -1,5 +1,88 @@
 # Статус приемки
 
+## Существующий бюджет в локальном супераппе: 2026-10-06
+
+Рабочее дерево поверх commit `2e7143c37ddc6e217aa6fc8a7d9db5e59ecc510b`
+остаётся незакоммиченным; исходные version-изменения сохранены. Изменён
+Compose в соседнем каталоге `cap`: суперапп теперь подключает `budget-app` к
+действующей сети `budget-planner_default` и базе `budget`, схема которой уже
+на ревизии `0012`. Саму базу и старый сервис не переносили и не перезаписывали.
+Среда: macOS arm64, Python 3.13.13, Docker 29.4.3/29.2.1, Compose 5.1.3.
+
+| Проверка | Действие | Результат | Ограничение |
+|---|---|---|---|
+| Резервная копия | `docker compose exec -T postgres pg_dump -U budget -d budget -Fc --no-owner --no-acl` и `pg_restore --list` | [x] Дамп сохранён вне репозитория с правами `0600`; список объектов читается | Пробное восстановление в этом прогоне не выполнялось |
+| Совместимость runtime | Контейнер с текущим образом вызвал `verify_database()` через `budget_runtime` в сети `budget-planner_default` | [x] Ревизия схемы и права runtime роли подтверждены до переключения | Не проверяет пароль пользователя |
+| API и навигация | `docker compose up -d --build --force-recreate --remove-orphans --wait`; `node superapp/browser-smoke.mjs` | [~] Старый и новый адреса budget ready, photo health — 200; гостевой браузерный маршрут и 360 px прошли | Авторизованный browser flow требует учётных данных |
+
+Для photo-access создан новый пустой локальный PostgreSQL том, чтобы ID
+тестовых пользователей из временной базы бюджета не совпали с ID существующих
+пользователей. Старые тестовые тома и их дампы сохранены; пользовательская VM
+не затрагивалась.
+
+## Возврат в photo-access после общего входа: 2026-10-06
+
+Поверх commit `2e7143c37ddc6e217aa6fc8a7d9db5e59ecc510b` проверено
+незакоммиченное дерево: ранее изменённые version-файлы сохранены; к изменённым
+файлам супераппа добавлены `frontend/src/pages/Login.tsx`, `Register.tsx`,
+`components/AuthIntro.tsx`, `lib/authRedirect.ts` и его тест. Среда та же, что
+в разделе ниже: macOS arm64, Python 3.13.13, Node.js 26.4.0, npm 12.1.0,
+Docker 29.4.3/29.2.1 и Compose 5.1.3.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+|---|---|---|---|
+| Маршрут входа | `npm --prefix frontend test -- src/lib/authRedirect.test.ts` | [x] 2 passed: путь в photo-access сохранён, внешний адрес отклонён | Unit-тест не запускает браузер |
+| Repository gates и изолированный Compose | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-superapp-photo-return-20261006 SMOKE_PORT=18087 make acceptance` | [~] Ruff clean; 127 backend и 83 frontend теста прошли; сборка, миграция и ready прошли; 2 гостевых browser smoke passed, 2 authenticated skipped | Тестовый владелец не создаётся в изолированном проекте; временный `curl` shim описан ниже. Контейнеры остановлены без `-v` |
+| Локальный суперапп | `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --build --force-recreate --wait`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` | [x] Гость нажал photo-access, перешёл между входом и регистрацией с сохранённым адресом, вошёл и попал в photo-access; новая регистрация также вернула в photo-access. Проверены бюджет, выход и ширина 360 px | Использованы отдельные локальные PostgreSQL тома и тестовые аккаунты; VM не затрагивалась |
+
+
+## Локальный суперапп: 2026-10-06
+
+Проверено дерево поверх commit `2e7143c37ddc6e217aa6fc8a7d9db5e59ecc510b`
+с незакоммиченными изменениями. До этой работы уже были изменены файлы версии
+(`backend/app/__init__.py`, `backend/pyproject.toml`, `backend/uv.lock`,
+`frontend/package.json`, `frontend/package-lock.json`) и этот журнал; они не
+сбрасывались. Текущая работа добавила `Dockerfile`, `frontend/vite.config.ts`,
+`frontend/src/main.tsx`, `frontend/src/components/Layout.tsx` и
+`frontend/src/vite-env.d.ts`; интеграционный Compose и photo-access находятся в
+соседних каталогах. Среда: macOS arm64, Python 3.13.13, Node.js 26.4.0,
+npm 12.1.0, Docker 29.4.3/29.2.1, Compose 5.1.3. Локальный Node не является
+рекомендуемой версией 22.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+|---|---|---|---|
+| Repository gates | `make lint`, `make test`, `make build` | [x] Ruff clean; 127 backend и 81 frontend тест прошли; production SPA и Compose config прошли | Backend suite использует SQLite fixture; Vite предупредил о чанке 1,057.35 kB |
+| Изолированная приемка бюджета | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-superapp-acceptance-20261006 SMOKE_PORT=18086 make acceptance` | [~] Свежие PostgreSQL и migration job запустились, ready ответил; 2 гостевых browser smoke passed, 2 authenticated skipped | `curl` отсутствует в окружении, поэтому временный `/private/tmp/cap-bin/curl` делал эквивалентный HTTP GET через Python. В изолированном проекте владелец не создавался; контейнеры остановлены без `-v` |
+| Интеграция супераппа | Из корня `cap`: `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --build --wait`; `python3 superapp/smoke.py` | [x] Оба приложения и PostgreSQL healthy; две новые учётные записи, отдельные корни, создание папки, CSRF 403, выход 401 | Использован отдельный локальный Compose проект `cap-superapp` и отдельные тома; VM не затрагивалась |
+| Browser flow супераппа | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` | [x] Главная, вход владельца, бюджет, возврат на главную, photo-access, выход и ширина 360 px прошли | Chromium запускался вне macOS sandbox из-за отказа MachPort; снимки главной и photo-access просмотрены. Скрипт не проверяет глубокие финансовые операции |
+
+
+## Release candidate `0.1.2`: 2026-10-05
+
+Проверено дерево поверх commit `2e7143c37ddc6e217aa6fc8a7d9db5e59ecc510b`
+(`Фикс фронта и импорта`) с единственным version-патчем: изменены
+`backend/app/__init__.py`, `backend/pyproject.toml`, `backend/uv.lock`,
+`frontend/package.json` и `frontend/package-lock.json`. Среда: macOS `arm64`,
+Python `3.13.13`, Node.js `26.4.0`, npm `12.1.0`, Docker `29.4.3`, Docker
+Compose `5.1.3`. Локальные frontend-команды выполнялись на Node.js 26, а не
+на поддерживаемом Node.js 22.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+|---|---|---|---|
+| Activity API | `backend/.venv/bin/python -m pytest backend/tests/test_activity.py -q` | [x] 3 passed | SQLite fixture проверяет pagination, поиск, суммы по дням, 401 и второго пользователя; не заменяет PostgreSQL RLS |
+| Activity UI | `npm --prefix frontend test -- Resources.test.tsx components/Layout.test.tsx` | [x] 2 файла, 27 tests passed | Fetch/API подменены |
+| Repository gates | `make lint`, `make test`, `make build` | [x] Ruff clean; 127 backend passed с одним сторонним `DeprecationWarning`; 17 frontend files / 81 tests passed; production SPA (2306 modules) и `docker compose config --quiet` прошли | Vite предупредил о JS chunk `1,056.77 kB` при пороге `500 kB` |
+| Fresh PostgreSQL/Compose | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-planner-release-012b SMOKE_PORT=18084 make acceptance` | [x] Сборка, новая PostgreSQL БД, migration job и ready прошли | Проверен fresh install; upgrade с историческими данными не проверен |
+| Browser smoke | Та же `make acceptance` команда | [~] 2 passed, 2 skipped | Гостевой redirect и login на 360 px прошли. Авторизованные сценарии skipped: disposable контур не создаёт владельца автоматически |
+| Live PostgreSQL activity smoke | Отдельный disposable проект `budget-planner-release-012c` на `18085`: две test-учётные записи, login, accounts, transaction, transfer, `GET /api/v1/activity` | [x] Owner увидел расход `1234` и перевод в одной дневной группе; Alice увидела только свою запись; запрос без сессии вернул 401 | Реальная PostgreSQL runtime-роль; не заменяет полный RLS integration suite |
+
+Первый `make acceptance` для `budget-planner-release-012` дошёл до healthy
+Compose, но остановился до browser smoke из-за отсутствующего Chromium. После
+установки тестового runtime в `/private/tmp/budget-planner-playwright-012`
+повторный независимый прогон `budget-planner-release-012b` завершился успешно.
+Все disposable контейнеры остановлены без `-v`; пользовательская VM и её база
+не использовались.
+
 ## Актуальный отчет: 2026-10-05
 
 Проверено рабочее дерево поверх commit `4805205` с незакоммиченными изменениями,
