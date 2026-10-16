@@ -3,7 +3,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import Category, Tag, Transaction
+from app.models import Account, Category, Tag, Transaction
 
 
 def test_suggestions_rank_same_description_and_skip_other_operation_types(client, auth, account, db):
@@ -36,6 +36,35 @@ def test_suggestions_rank_same_description_and_skip_other_operation_types(client
     assert items[0]['category_name'] == 'Кафе'
     assert items[0]['tag_ids'] == [tag.id]
     assert items[0]['date'] == '2026-09-20'
+
+
+def test_exact_title_on_another_account_survives_many_newer_prefix_matches(client, auth, account, db):
+    other_account = Account(
+        name="Другой счёт", type="bank", initial_balance_minor=0,
+        initial_balance_date=date(2026, 1, 1),
+    )
+    db.add(other_account)
+    db.flush()
+    db.add(Transaction(
+        type="expense", amount_minor=300_00, date=date(2026, 1, 1),
+        account_id=other_account.id, description="Кофе",
+    ))
+    db.add_all([
+        Transaction(
+            type="expense", amount_minor=100_00, date=date(2026, 9, 20),
+            account_id=account.id, description=f"Кофейня {index:03d}",
+        )
+        for index in range(101)
+    ])
+    db.commit()
+
+    response = client.get('/api/v1/transactions/suggestions', params={
+        'query': 'Кофе', 'type': 'expense', 'account_id': account.id,
+    })
+    assert response.status_code == 200, response.text
+    items = response.json()['items']
+    assert items[0]['description'] == 'Кофе'
+    assert items[0]['account_id'] == other_account.id
 
 
 def test_suggestion_query_treats_sql_wildcards_as_text(client, auth, account, db):

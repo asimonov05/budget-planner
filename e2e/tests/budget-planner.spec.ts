@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
 const username = process.env.E2E_USERNAME?.trim()
@@ -64,5 +65,23 @@ test.describe('authenticated smoke tests', () => {
     await page.locator('.mobile-bar .icon-button').click()
     await expect(page.locator('.sidebar')).toHaveClass(/is-open/)
     await expect(page.getByRole('navigation', { name: 'Основное меню' })).toBeVisible()
+  })
+
+  test('the bank PDF skill opens and downloads its Markdown from the import guide', async ({ page }) => {
+    await logIn(page)
+    await page.goto('/exchange')
+    const popupPromise = page.waitForEvent('popup')
+    await page.getByRole('link', { name: 'Открыть скилл' }).click()
+    const popup = await popupPromise
+    await expect(popup.locator('body')).toContainText('name: bank-pdf-to-budget-csv')
+    await popup.close()
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('link', { name: 'Скачать SKILL.md' }).click()
+    const download = await downloadPromise
+    expect(download.suggestedFilename()).toBe('bank-pdf-to-budget-csv-SKILL.md')
+    expect(await download.failure()).toBeNull()
+    const expected = await readFile(new URL('../../frontend/public/skills/bank-pdf-to-budget-csv/SKILL.md', import.meta.url))
+    expect(await readFile((await download.path())!)).toEqual(expected)
   })
 })

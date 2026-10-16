@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowDown, ArrowUp, BarChart3, Bell, Bug, CalendarDays, ChevronRight, CreditCard,
+  ArrowDown, ArrowUp, BarChart3, Bell, CalendarDays, ChevronRight, CreditCard,
   FileUp, Flag, GripVertical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose,
   PiggyBank, ReceiptText, Settings, SlidersHorizontal, TableProperties, WalletCards, X,
   AppWindow,
@@ -254,7 +254,7 @@ export function Layout() {
     <aside className={`sidebar ${mobileOpen ? 'is-open' : ''}`}>
       <div className="brand">
         <div className="brand-mark"><WalletCards aria-hidden="true"/></div>
-        <div className="brand-copy"><strong>Бюджет</strong><span>Контур</span></div>
+        <div className="brand-copy"><strong>Бюджет</strong><span>cap space</span></div>
         <button className="mobile-close icon-button" aria-label="Закрыть меню" onClick={() => setMobileOpen(false)}><X/></button>
       </div>
       <nav aria-label="Основное меню">
@@ -285,7 +285,6 @@ export function Layout() {
           disabled={!menuOwner}
         ><SlidersHorizontal aria-hidden="true"/><span>Настроить меню</span></button>
         <button className="sidebar-action" aria-label={compact ? 'Развернуть меню' : 'Свернуть меню'} onClick={() => setCompact((value) => !value)}>{compact ? <ChevronRight aria-hidden="true"/> : <PanelLeftClose aria-hidden="true"/>}<span>{compact ? 'Развернуть' : 'Свернуть'}</span></button>
-        {me.data?.debug_admin_enabled && <a className="sidebar-action" href="/admin/" aria-label="Админка"><Bug aria-hidden="true"/><span>Админка</span></a>}
         <button className="sidebar-action" aria-label="Выйти" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut aria-hidden="true"/><span>Выйти</span></button>
       </div>
     </aside>

@@ -4,8 +4,8 @@ export function AuthIntro() {
   const combined = import.meta.env.BASE_URL === '/budget/'
   return <section className="login-intro">
     <div className="brand brand--light">
-      <div className="brand-mark">К</div>
-      <div className="brand-copy"><strong>Контур</strong><span>{combined ? 'Все приложения' : 'Личный бюджет'}</span></div>
+      <div className="brand-mark" aria-hidden="true">c</div>
+      <div className="brand-copy"><strong>cap space</strong><span>{combined ? 'Все приложения' : 'Личный бюджет'}</span></div>
     </div>
     <div>
       <span className="login-kicker">{combined ? 'Одно пространство' : 'Финансы без шума'}</span>

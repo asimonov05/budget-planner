@@ -37,7 +37,7 @@ export function ReleasePreviewPopup({
     <button className="release-preview-popup__open" type="button" onClick={onOpen} aria-label={`Открыть уведомления: ${preview.title}`}>
       <span className="release-preview-popup__icon"><Sparkles aria-hidden="true"/></span>
       <span className="release-preview-popup__content">
-        <span className="release-preview-popup__meta"><strong>Контур · новый релиз</strong>{dateLabel && <time dateTime={preview.created_at}>{dateLabel}</time>}</span>
+        <span className="release-preview-popup__meta"><strong>cap space · новый релиз</strong>{dateLabel && <time dateTime={preview.created_at}>{dateLabel}</time>}</span>
         <strong className="release-preview-popup__title">{preview.title}</strong>
         <span className="release-preview-popup__summary">{preview.body}</span>
         <span className="release-preview-popup__link">Открыть уведомления <ArrowUpRight aria-hidden="true"/></span>

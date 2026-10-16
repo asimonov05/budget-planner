@@ -198,3 +198,35 @@ def test_release_summary_migration_preserves_full_note_and_shortens_inbox(tmp_pa
         assert note == (summary, full_body)
         assert notification == (summary,)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_superapp_availability_migration_defaults_and_constraints(tmp_path: Path):
+    backend_root = Path(__file__).resolve().parents[1]
+    database = tmp_path / "superapp.sqlite3"
+    alembic = Config(str(backend_root / "alembic.ini"))
+    alembic.set_main_option("script_location", str(backend_root / "alembic"))
+    alembic.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    command.upgrade(alembic, "0012")
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO users (id, username, password_hash, created_at) "
+            "VALUES (1, 'owner', 'hash', '2026-01-01')"
+        )
+    command.upgrade(alembic, "0013")
+    with sqlite3.connect(database) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        assert connection.execute(
+            "SELECT id, enabled, version FROM application_availability ORDER BY id"
+        ).fetchall() == [("budget", 1, 1), ("photo", 1, 1)]
+        connection.execute(
+            "INSERT INTO user_app_access (user_id, app_id, enabled) VALUES (1, 'photo', 0)"
+        )
+        connection.execute(
+            "UPDATE user_app_access SET enabled=NULL, version=2 WHERE user_id=1"
+        )
+        assert connection.execute("SELECT enabled, version FROM user_app_access").fetchone() == (
+            None, 2,
+        )
+        connection.execute("DELETE FROM users WHERE id=1")
+        assert connection.execute("SELECT count(*) FROM user_app_access").fetchone() == (0,)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

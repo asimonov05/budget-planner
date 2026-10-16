@@ -30,14 +30,15 @@ export function TransactionSuggestions({
   const [query, setQuery] = useState('')
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null)
   const trimmed = value.trim()
+  const selectedAccountId = accountId?.trim() || undefined
   useEffect(() => {
     if (trimmed.length < 2) { setQuery(''); return }
     const timer = window.setTimeout(() => setQuery(trimmed), 250)
     return () => window.clearTimeout(timer)
   }, [trimmed])
   const suggestions = useQuery<{ items: TransactionSuggestion[] }>({
-    queryKey: ['transaction-suggestions', transactionType, query, accountId],
-    queryFn: () => api(`/transactions/suggestions?${queryString({ query, type: transactionType, account_id: accountId, limit: 5 })}`),
+    queryKey: ['transaction-suggestions', transactionType, query, selectedAccountId],
+    queryFn: () => api(`/transactions/suggestions?${queryString({ query, type: transactionType, account_id: selectedAccountId, limit: 5 })}`),
     enabled: query.length >= 2 && query === trimmed && selectedTitle !== trimmed,
     retry: false,
     staleTime: 60_000,

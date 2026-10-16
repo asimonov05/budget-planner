@@ -9,7 +9,7 @@ import { api, jsonBody } from '../lib/api'
 import { AuthIntro } from '../components/AuthIntro'
 import { Button, Field, Input } from '../components/ui'
 import type { User } from '../lib/types'
-import { photoReturnPath } from '../lib/authRedirect'
+import { superappReturnPath } from '../lib/authRedirect'
 
 const schema = z.object({ username: z.string().min(1, 'Введите логин'), password: z.string().min(1, 'Введите пароль') })
 type Values = z.infer<typeof schema>
@@ -17,7 +17,7 @@ type Values = z.infer<typeof schema>
 export function Login({ currentUser }: { currentUser?: User | null }) {
   const navigate = useNavigate()
   const { search } = useLocation()
-  const destination = photoReturnPath(search)
+  const destination = superappReturnPath(search)
   const client = useQueryClient()
   useEffect(() => {
     if (currentUser && destination) window.location.replace(destination)
@@ -32,13 +32,13 @@ export function Login({ currentUser }: { currentUser?: User | null }) {
       else navigate('/')
     },
   })
-  if (currentUser) return destination ? <div className="fullscreen-state">Открываем фотораздел…</div> : <Navigate to="/" replace />
+  if (currentUser) return destination ? <div className="fullscreen-state">Открываем приложение…</div> : <Navigate to="/" replace />
   return <div className="login-page">
     <AuthIntro/>
     <section className="login-form-wrap">
       <form className="login-form" onSubmit={handleSubmit((values) => login.mutate(values))}>
         <div className="login-icon"><LockKeyhole/></div>
-        <h1>{import.meta.env.BASE_URL === '/budget/' ? 'Вход в Контур' : 'Вход в бюджет'}</h1>
+        <h1>{import.meta.env.BASE_URL === '/budget/' ? 'Вход в cap space' : 'Вход в бюджет'}</h1>
         <p>Введите свой логин и пароль.</p>
         <Field label="Логин" error={errors.username?.message}>
           <Input autoComplete="username" autoFocus {...register('username')}/>

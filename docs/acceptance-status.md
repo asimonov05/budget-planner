@@ -1,5 +1,532 @@
 # Статус приемки
 
+## Точный поиск получателя доступа Photo-access: 2026-10-16
+
+Добавлен `GET /api/v1/superapp/apps/photo/users/resolve?username=...`:
+после проверки общей сессии и доступности приложения он возвращает только
+`id` и точный логин одного активного пользователя. Списка пользователей,
+подстрочного поиска и паролей в ответе нет. Photo-access использует этот
+контракт для назначения доступа; схема и миграции бюджета в этой итерации
+не менялись.
+
+Budget HEAD `82db3f8e4cc6224a8546e2051857e51b831b6fd9`; рабочее дерево
+dirty, включая существовавшие ранее изменения и новые незакоммиченные файлы
+резолвера, identity boundary и тестов. Корневой `cap` остаётся без коммитов.
+Среда: macOS arm64, backend venv Python 3.13.13, Node.js 26.4.0,
+Chrome 150.0.7871.182, Docker client 29.4.3 / server 29.2.1.
+Собранный контейнер: Python 3.13.15; disposable PostgreSQL 17.11,
+`alembic_version=0013`.
+
+| Проверка | Точная команда | Наблюдаемый результат и границы |
+| --- | --- | --- |
+| Статика и полный suite текущего дерева | `make lint test` из `budget-planner/` | [x] Ruff и TypeScript завершились успешно; 175 pytest passed, 0 failed/skipped; 90 Vitest passed в 19 файлах, 0 failed/skipped. Backend fixture использует SQLite. Лог: `photo-access/.acceptance/sharing-budget-gates.log` относительно корня `cap`. |
+| Сборка суперапп-пути | `VITE_BASE_PATH=/budget/ make build` | [x] TypeScript, Vite SPA и `docker compose config --quiet` прошли. Прежние предупреждения о `/contour.css` и JS chunk больше 500 kB сохраняются. |
+| Изолированная приёмка | `BUILDX_CONFIG=/private/tmp/photo-library-buildx PLAYWRIGHT_CHANNEL=chrome make -o lint -o test -o build acceptance SMOKE_PROJECT=photo-sharing-auth-20261016 SMOKE_PORT=18087` | [x] exit 0: текущий образ собран с кешем неизменившихся слоёв, новый PostgreSQL volume, migration job завершён, ready вернул `{"status":"ok"}`. Playwright: 2 passed, 3 skipped, 0 failed за 2.2 s; 5 workers. `-o` исключает повтор уже прошедших в этой итерации lint/test/build. Лог: `photo-access/.acceptance/sharing-budget-acceptance.log`. Chrome запущен вне macOS sandbox. |
+| Версия мигрированной БД | `BIND_HOST=127.0.0.1 APP_PORT=18087 TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=smoke docker compose -p photo-sharing-auth-20261016 up -d --wait postgres`; `docker exec photo-sharing-auth-20261016-postgres-1 psql -U budget -d budget -Atc 'SELECT version_num FROM alembic_version; SHOW server_version;'` | [x] После автоматического `down` повторно поднят только PostgreSQL на том же тестовом томе; запрос подтвердил `0013` и `17.11`. |
+| Runtime и образ | `docker run --rm --entrypoint python budget-planner:smoke --version`; `docker image inspect budget-planner:smoke --format '{{.Id}}'` | [x] Python 3.13.15; `sha256:b4bad42f6e5891d48a977038d54f169e25830f6f50e3a5e3c9a3d0ccc6b1b092`. |
+| Очистка тестового окружения | `BIND_HOST=127.0.0.1 APP_PORT=18087 TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=smoke docker compose -p photo-sharing-auth-20261016 down --volumes` | [x] Удалены только контейнер, сеть и `photo-sharing-auth-20261016_postgres_data`. Рабочие локальные базы и production не использовались. |
+
+Без `E2E_USERNAME`/`E2E_PASSWORD` явно пропущены три сценария бюджета:
+вход и годовой план, авторизованная мобильная навигация, открытие и скачивание
+bank-PDF skill. Этот прогон доказывает гостевые экраны и миграцию/readiness,
+но не полный авторизованный browser flow и не сам резолвер на PostgreSQL;
+его сквозной вызов проверяется отдельной интеграцией Photo-access.
+Прежнее предупреждение Starlette/AnyIO остаётся. Релиз и уведомления не
+публиковались; эта приёмка не меняла рабочее приложение на 8083.
+
+## Глазок для скрытых полей админки: 2026-10-16
+
+В таблицах и карточках `/admin/` добавлено точечное раскрытие значения.
+Повторное нажатие, смена раздела, закрытие карточки и скрытие вкладки
+убирают раскрытый текст; pending-запрос отменяется и не возвращает значение
+на другой экран. Раскрытие не заполняет форму замены и не создаёт PATCH.
+
+Обычные list/detail/mutation ответы сохраняют маски. Отдельный
+`POST /api/v1/superapp/admin/tables/{table_name}/record/reveal?key=...`
+принимает одно имя поля, проверяет текущего администратора, CSRF и Origin.
+Список разрешённых полей явный: новые столбцы закрыты по умолчанию;
+credentials, hashes и служебный JSON недоступны. Аудит хранит актора,
+идентификатор и имя поля без значения. Уточнён ADR-009; схема/миграции и ER
+не менялись.
+
+Корневой `cap` без коммитов; budget base
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`. Существующие изменения сохранены,
+новые файлы не закоммичены. Python в backend venv 3.13.13, контейнеры
+3.13.15 / PostgreSQL 17.11, Node.js 26.4.0, Docker server 29.2.1.
+
+| Проверка | Команда / действие | Результат и границы |
+| --- | --- | --- |
+| Фокусированный backend | `backend/.venv/bin/python -m pytest backend/tests/test_superapp_admin_data.py -q` из `budget-planner/` | [x] 27 passed, 0 failed/skipped: имена/суммы/даты, другой владелец, отсутствие прав/сессии/CSRF, чужой Origin, отзыв роли, запрещённые секреты/JSON/неизвестные поля, no-store и аудит без значений. SQLite fixture. |
+| Статическая админка в браузере | `PLAYWRIGHT_CHANNEL=chrome node superapp/admin-browser-smoke.mjs` | [x] Полный существующий flow и новые проверки: list/detail show/hide, ошибка запроса, запоздалый ответ после навигации, pagehide, отсутствие автоматической записи раскрытого значения, credentials без глазка, обычные CRUD/конфликты/доступы. 0 page errors; mock API. |
+| Полная приёмка | `python3 /private/tmp/cap-admin-eye-20261016/verify.py acceptance` запускает `CI=1 PLAYWRIGHT_CHANNEL=chrome COMPOSE_FILE=<budget-compose>:<private-secrets-override> E2E_USERNAME=<synthetic-owner> E2E_PASSWORD=<env-only> make acceptance SMOKE_PROJECT=cap-eye-acceptance-20261016-2f40 SMOKE_PORT=<isolated-port> 'SMOKE_ENV=BIND_HOST=127.0.0.1 APP_PORT=<isolated-port> TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=eye-check-20261016-2f40'` | [x] exit 0: Ruff/TypeScript, 170 pytest, 90 Vitest / 19 файлов, SPA build, Compose migration/readiness и 5/5 Playwright (4.2 s), 0 failed/skipped. Новая отдельная PostgreSQL и тестовый владелец. `workers=1` не закрывает TD-011. |
+| Реальный UI и PostgreSQL | `python3 /private/tmp/cap-admin-eye-20261016/verify.py stage`; `SUPERAPP_TEST_STATE=/private/tmp/cap-admin-eye-20261016/state.json PLAYWRIGHT_CHANNEL=chrome node superapp/admin-reveal-live-smoke.mjs` | [x] Отдельный `cap-admin-check-eye-20261016-2f40`, настоящий Nginx/API/PostgreSQL. Два владельца; show/hide имён и сумм в списке/карточке, повторное открытие скрыто, POST только выбранного поля, CSRF/Origin, отказ обычному пользователю и раскрытию password_hash. Литерал `<b>` отображается текстом, storage не содержит значение, нажатие Save без изменения не отправляет PATCH. 320 px: кнопка 44×44, страница без горизонтального overflow. 0 page errors. |
+| PostgreSQL роли и аудит | `docker exec -i -e SUPERAPP_DISPOSABLE=1 cap-admin-check-eye-20261016-2f40-budget-app-1 python - < superapp/admin-reveal-postgres-smoke.py` | [x] В журнале только actor/field metadata; debug_admin имеет SELECT без UPDATE; runtime без elevated privileges, scope разделяет двух владельцев и сбрасывается после transaction; текущая схема 0013. |
+| Визуально | Просмотр `/private/tmp/cap-admin-mobile-viewport-dark.png` и `/private/tmp/cap-admin-eye-live-mobile.png` | [x] В light/dark при 320 px глазок видим, текст и кнопки не пересекаются, карточка прокручивается в пределах viewport. Только синтетические данные. |
+| Локальное применение | `python3 /private/tmp/cap-admin-eye-20261016/apply_local.py` | [x] Оба проверенных образа установлены как `cap-budget:local` и `budget-planner:local`, перезапущены только API с `--no-deps --no-build`. Readiness 8082/8083 и наличие маршрута прошли. Контрольные суммы всех 30 таблиц сохранились; 8 счетов, 54 операции, 10 переводов. 63 Python source-файла app/Alembic в обоих контейнерах совпали с текущим деревом. |
+| Дополнительная статика | `node --check superapp/www/admin.js`; `node --check superapp/admin-reveal-live-smoke.mjs`; `budget-planner/backend/.venv/bin/python -m ruff check superapp/admin-reveal-postgres-smoke.py`; `git -C budget-planner diff --check` | [x] Все проверки прошли. |
+
+Первоначальную подготовку тестового Compose остановила недоступность file
+secrets непривилегированному процессу. Исправлены только права тестовых
+файлов внутри приватного каталога; последующая полная приёмка прошла.
+Браузерные проверки выполнялись разрешённым запуском вне macOS sandbox.
+Остались прежние предупреждения Starlette/AnyIO и Vite CSS/chunk.
+
+Локальные образы:
+`cap-budget:local` — `sha256:046c837a125a85ddc05c026eae3d7a3f80095d8aa34a8afb33275bb1e5e266fa`,
+`budget-planner:local` — `sha256:ef92b7de2aa53b8eebcfcbaa5b418a3a08341c1d54718b9d3bc73d10cc9e1c88`.
+Предыдущие сохранены под `*:before-sensitive-eye-20261016`.
+Контейнеры и сети обоих disposable projects удалены; volumes оставлены
+согласно процедуре. Рабочая БД не использовалась для smoke/E2E.
+Версия остаётся локальной 0.1.4, новый релиз и уведомления не публиковались;
+продакшен не менялся. Photo/storage интеграция этим изменением не проверялась.
+
+## Восстановление локального приложения из 0004: 2026-10-16
+
+Пользователь выбрал 0004 с 54 операциями и 10 переводами вместо 0005,
+сохраняющего старый прод до переноса данных. Восстановление выполнено
+только локально, без подключения к продакшену. В исходном дампе схема
+0012, у текущего приложения — 0013. Бюджет принадлежит `owner`, ID 1;
+логины, хеши паролей и остальные исходные данные сохранены.
+
+Корневой `cap` без коммитов; budget base
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`, прежнее dirty tree сохранено.
+Прикладной код и миграции в этой операции не редактировались. Среда:
+macOS arm64, host Python 3.14.5 / Node.js 26.4.0; контейнеры Python 3.13.15,
+PostgreSQL 17.11; Docker client 29.4.3 / server 29.2.1; Chrome 150.0.7871.182.
+Для Docker использованы `DOCKER_HOST=unix:///Users/asimonov05/.colima/default/docker.sock`
+и `DOCKER_CONFIG=/private/tmp/cap-vk-20261013/docker`.
+
+| Проверка | Точная команда / действие | Результат и границы |
+| --- | --- | --- |
+| Свежая копия локальной БД | `python3 /private/tmp/cap-local-restore-20261016/capture_local.py` | [x] Согласованный `pg_export_snapshot` + `pg_dump -Fc --no-owner --no-acl`; реестр 0006, схема 0013. Дата снимка 15 октября UTC = 16 октября МСК. |
+| Restore и обновление схемы | `python3 /private/tmp/cap-local-restore-20261016/restore_local.py stage` | [x] Реальный restore 0004: все 28 исходных таблиц совпали по counts/MD5. Текущий migration job обновил 0012 → 0013; 27 таблиц сохранились без изменения строк, изменился `alembic_version`, добавлены две таблицы доступа. Повторный restore 0006 проверен по всем 30 таблицам. |
+| Авторизация и изоляция | Disposable auth probe из `deploy/restore_db.py`; `python3 /private/tmp/cap-local-restore-20261016/owner_probe.py verify` | [x] Два синтетических пользователя: регистрация, вход/выход, запись счёта и отсутствие чужих счетов. На другом клоне с временным паролем владельца: 8 счетов / 54 операции / 10 переводов, прогноз на 3 месяца, ZIP-экспорт, каталог 29 прикладных таблиц, новые таблицы read-only, хеши пользователей маскируются. Рабочие пароли и данные не изменялись. |
+| FORCE RLS и runtime | `docker compose -f compose.yaml run --rm --no-deps -T -e DATABASE_URL=<owner-probe-db-as-budget_runtime> budget-app python -c <read-only-scope-check>` через приватный helper | [x] Runtime без elevated privileges; без scope 0 счетов, owner 8/54, другой существующий пользователь 0/0; новый transaction не наследует scope. На восстановленной БД нет непроверенных ограничений PostgreSQL. |
+| Браузер на клоне | `node /private/tmp/cap-local-restore-20261016/browser_probe.mjs` | [x] Один полный авторизованный flow: вход owner через реальный UI, 8/54/10 через API браузера, страница операций, админка с двумя новыми таблицами и тремя пользователями; 0 page errors. Первое sandbox-запускание Chrome прервано ОС до открытия страницы; разрешённый повтор вне sandbox прошёл. |
+| Переключение | `python3 /private/tmp/cap-local-restore-20261016/restore_local.py activate` | [x] На время переключения приостановлены оба API и шлюз. При остановленных записях рабочая БД совпала с 0006. Атомарно переименованы базы, прежняя оставлена с `ALLOW_CONNECTIONS=false`; после подключения все counts/MD5 совпали с мигрированным кандидатом. |
+| Актуальные маршруты | `docker compose -f compose.yaml up -d --no-build --no-deps --force-recreate --wait gateway` | [x] Исправлено предшествовавшее восстановлению состояние шлюза с устаревшим шаблоном: `/`, `/budget/`, `/budget/login`, `/admin/`, readiness возвращают 200. Флаги budget/photo сохранены. |
+| Совместимость отдельного запуска | `docker compose -f budget-planner/compose.yaml build app`; `docker compose -f budget-planner/compose.yaml up -d --no-build --no-deps --force-recreate --wait app` | [x] Standalone 8082 обновлён с устаревшего образа 0.1.1/head 0012 до текущего дерева 0.1.4/head 0013. TypeScript/Vite build прошёл с прежними предупреждениями CSS/chunk; новый контейнер успешно запущен. Прежний image сохранён под `budget-planner:before-local-restore-20261016`. |
+| Окончательное состояние | `verify_schema_current()` + `verify_database()` в обоих API; HTTP readiness 8082/8083; повторная сверка всех таблиц | [x] Оба entrypoint: 0.1.4/head 0013, PostgreSQL ok, readiness 200; 27 исходных таблиц совпадают с 0004. Disposable базы и контейнеры удалены, тестовых записей в рабочей БД нет. |
+
+Квитанция восстановления:
+`backups-external/db-registry/restore-events/e8cc3c382823467b8263a379a88be52f.json`.
+Позднейшая проверка совместимых локальных runtime и шлюза:
+`backups-external/db-registry/maintenance-events/r20261015_210734_c277-local-runtime.json`.
+Файлы приватные и исключены из Git. Откат — 0006; дополнительно сохранена
+база `budget_before_r20261015_210734_c277`. Новые релизы и уведомления не
+публиковались. Полные `make lint`, `make test`, `make acceptance` не
+повторялись для операции восстановления данных; вместо них выполнены
+реальные PostgreSQL restore/migration и авторизованный API/browser smoke
+на клонах. Это не новая проверка всех прикладных сценариев.
+
+## Проверка Photo mutations через общую identity: 2026-10-16
+
+Добавлен `POST /api/v1/superapp/apps/photo/identity`: существующая сессия,
+связанный с ней CSRF-токен, обычная same-origin проверка и доступ к `photo`
+проверяются до выдачи `{id, username}`. GET сохраняет прежний контракт.
+Оба маршрута используют общий presentation provider; финансовые данные не
+меняются и не блокируются. Контракт интеграции требует от Photo отдельной
+проверки исходного browser Origin и upstream-запроса с Origin статически
+настроенного identity URL.
+Доверие к `X-Forwarded-Host` или `X-Forwarded-Proto` не добавлено.
+
+Изменения локальные, без release/deploy и изменения схемы. Budget base:
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`; исходное dirty tree сохранено,
+новые файлы не закоммичены. Среда: macOS arm64, Python 3.13.13,
+Node.js 26.4.0, npm 12.1.0, Docker 29.4.3.
+
+Команды выполнены из `budget-planner`:
+
+| Проверка | Команда | Результат и границы |
+| --- | --- | --- |
+| Identity и доступ | `backend/.venv/bin/python -m pytest backend/tests/test_photo_identity.py backend/tests/test_superapp_access.py -q` | 14 passed, 0 failed/skipped. Успех; отсутствующая/невалидная CSRF; сессия другого пользователя; чужой Origin со spoofed forwarded headers; глобальное закрытие; персональное исключение; отозванная сессия; GET совместимость. |
+| Линтеры | `make lint` | Ruff и TypeScript прошли. |
+| Регрессия | `make test` | Backend: 157 passed; frontend: 90 passed, 19 файлов; 0 failed/skipped. Существующая SQLite fixture, не доказательство PostgreSQL RLS. |
+| Сборка | `make build` | SPA build и Compose config прошли. Прежние предупреждения Vite: внешний `/contour.css` и JS bundle больше 500 kB. |
+
+Обязательный Compose acceptance дополнительно выполнен на новом изолированном
+проекте `photo-auth-acceptance-20261016`, порт `18087`, без существующих
+контейнеров, томов и пользовательских данных. Команда:
+
+```bash
+env -u E2E_USERNAME -u E2E_PASSWORD PLAYWRIGHT_CHANNEL=chrome \
+  make acceptance SMOKE_PROJECT=photo-auth-acceptance-20261016 SMOKE_PORT=18087
+```
+
+В этом прогоне Ruff/TypeScript, 157 backend-тестов и 90 frontend-тестов
+прошли; SPA и Compose config собраны. Первая Docker-сборка остановилась
+из-за запрета sandbox на запись служебного файла `~/.docker/buildx/activity`.
+После разрешённого запуска вне sandbox повторён только оставшийся recipe,
+без повторения уже прошедших проверок:
+
+```bash
+env -u E2E_USERNAME -u E2E_PASSWORD PLAYWRIGHT_CHANNEL=chrome \
+  make -o lint -o test -o build acceptance \
+  SMOKE_PROJECT=photo-auth-acceptance-20261016 SMOKE_PORT=18087
+```
+
+Текущий образ `budget-planner:smoke` собран с использованием 17 cached steps.
+Новая PostgreSQL успешно запущена; migration job завершился успешно,
+`/api/v1/health/ready` вернул 200 `{"status":"ok"}`. Playwright/Chrome:
+**2 passed / 3 skipped / 0 failed**. Пройдены гостевой redirect на login и
+login при ширине 360 px. Пропущены вход/годовой план, авторизованная мобильная
+навигация и открытие/скачивание банковского PDF-скилла, поскольку
+`E2E_USERNAME`/`E2E_PASSWORD` явно не заданы. Это не полный авторизованный E2E.
+
+`make` остановил и удалил все контейнеры и сеть тестового проекта. Для записи
+ревизии затем ненадолго поднят только его собственный PostgreSQL и выполнен
+read-only `SELECT version_num FROM alembic_version`: результат **0013**;
+после чтения PostgreSQL и сеть вновь удалены. Новый disposable volume
+`photo-auth-acceptance-20261016_postgres_data` оставлен согласно поведению
+`make acceptance`; рабочие базы и сервисы не затрагивались.
+
+Логи: `/private/tmp/photo-auth-acceptance-20261016.log` и
+`/private/tmp/photo-auth-acceptance-20261016-container.log`. Полный сквозной
+Photo→budget сценарий не входит в этот бюджетный acceptance; его отдельные
+API/browser проверки фиксируются в документации Photo.
+
+## Главная для гостей: 2026-10-16
+
+Статическая главная супераппа теперь предлагает вход и регистрацию до
+проверки сессии. Карточки скрыты в исходном HTML; гостю не запрашиваются
+`/apps.json` и `/api/v1/superapp/apps`. После входа/регистрации с главной
+`next=/` возвращает на выбор доступного приложения. Пока выполняется выход,
+каталог скрывается; при неудачном выходе восстанавливается.
+
+Изменения локальные, без выкладки и изменений БД. Корневой `cap` по-прежнему
+без коммитов; budget base `82db3f8e4cc6224a8546e2051857e51b831b6fd9`,
+прежнее dirty tree сохранено. Среда: macOS arm64, Node.js 26.4.0,
+Playwright с установленным Google Chrome (`PLAYWRIGHT_CHANNEL=chrome`).
+
+| Проверка | Команда | Результат и границы |
+| --- | --- | --- |
+| Гостевая и авторизованная главная | `PLAYWRIGHT_CHANNEL=chrome node superapp/home-browser-smoke.mjs` | [x] 8 сценариев passed, 0 failed/skipped: pending auth, 401, ошибка сети, отсутствие запросов каталога у гостя, успешная сессия и персональная/deploy-фильтрация, ошибка каталога, выход, 320 px. Mock API; рабочие аккаунты не используются. |
+| Регрессия админки | `PLAYWRIGHT_CHANNEL=chrome node superapp/admin-browser-smoke.mjs` | [x] Полный существующий mocked browser flow прошёл с новым поведением главной. |
+| Общие стили | `VITE_BASE_PATH=/budget/ npm --prefix budget-planner/frontend run build`; `PLAYWRIGHT_CHANNEL=chrome node superapp/appearance-integration-smoke.mjs` | [x] Build и browser integration прошли. Первый запуск fixture не загрузил старый standalone dist с base=/; пересборка с нужным base=/budget/ восстановила предусловие. Остались прежние Vite-предупреждения про внешний CSS и размер bundle. |
+| Статика | `node --check superapp/www/home.js`; `docker compose config --quiet`; `git -C budget-planner diff --check`; `git -C photo-access diff --check` | [x] Прошли. Схема, backend и собираемые приложения не менялись; полные backend/Compose acceptance повторно не запускались для этой правки статической главной. |
+| Визуально | `/private/tmp/cap-home-guest-desktop.png`, `/private/tmp/cap-home-guest-mobile.png` | [x] Desktop и 320 px: видны вход/регистрация, нет карточек приложений, кнопки и заголовок не обрезаны. |
+
+Ожидания `superapp/browser-smoke.mjs` и `superapp/flags-browser-smoke.mjs`
+обновлены под гостевую главную и возврат `next=/`; live/Docker-прогоны этих
+сценариев в этой правке не выполнялись. Предыдущие результаты ниже относятся
+к прежнему состоянию главной.
+
+## Админка супераппа и доступ к приложениям: 2026-10-15
+
+Изменения локальные, без release/deploy. Корневой `cap` не имеет коммитов;
+бюджет — `82db3f8e4cc6224a8546e2051857e51b831b6fd9` с ранее изменённым
+рабочим деревом и новыми незакоммиченными файлами. Прежние изменения сохранены.
+Среда: macOS arm64, Python 3.13.13, Node.js 26.4.0, Docker Compose 5.1.3.
+
+Добавлены общая админка `/admin/`, каталог всех 29 прикладных таблиц,
+маскирование данных на сервере, версии и аудит табличных правок, глобальный
+доступ к двум приложениям и пользовательские исключения. Миграция `0013`
+добавляет две таблицы и RLS; схема Excalidraw обновлена. Административные
+операции и общий вход доступны при закрытых приложениях.
+
+| Проверка | Точная команда / действие | Результат и границы |
+| --- | --- | --- |
+| Backend gate, окончательные guards | `make test-backend` из `budget-planner/` | [x] 149 passed, 0 failed/skipped, 13.66 s; один прежний Starlette/AnyIO deprecation warning. SQLite fixtures, не доказательство PostgreSQL. |
+| Первоначальный полный gate | `make test` из `budget-planner/` | [x] На первом варианте изменений: 139 pytest + 89 Vitest, 0 failed/skipped. Позднейшие защитные изменения покрыты окончательными проверками ниже/выше, этот результат сам по себе их не подтверждает. |
+| Статика и сборка первого варианта | `make lint`; `make build` из `budget-planner/` | [x] Ruff и TypeScript, Vite build и Compose config. Первый lint поймал неиспользуемый import, удалён; повтор прошёл. Vite сохраняет прежние предупреждения о внешнем contour.css и размере chunk. |
+| Фото backend | `../budget-planner/backend/.venv/bin/python -m pytest tests -q` из `photo-access/` | [x] 6 passed, включая отказ 403 при закрытом приложении и ошибки общего сервиса. |
+| Whitespace | `git -C budget-planner diff --check`; `git -C photo-access diff --check` | [x] Оба прошли. |
+| UI focused | `npm --prefix budget-planner/frontend test -- src/App.test.tsx src/lib/authRedirect.test.ts src/pages/Settings.test.tsx src/pages/Notifications.test.tsx src/components/Layout.test.tsx` | [x] 22 passed: закрытый бюджет, возврат из входа в админку, перенос настроек пользователей и публикации. |
+| Admin browser fixture | `PLAYWRIGHT_CHANNEL=chrome node superapp/admin-browser-smoke.mjs` | [x] CRUD, ревизии/конфликт, CSRF, маски/пустое поле замены, настройки доступа, создание/пароль пользователя, черновик/edit/preview/publish, сообщение, Photo 403. Mock API, не доказательство реальной БД. Desktop dark и 320×740: заголовок помещается, modal в viewport, последние действия доступны через внутренний scroll. |
+| Фото production build | `VITE_BASE_PATH=/photo/ VITE_API_BASE_URL=/photo-api npm --prefix photo-access/frontend run build` | [x] TypeScript + Vite прошли. |
+| Schema diagram | Фокусированный `test_schema_diagram.py`, JSON/model/FK checks; визуальная проверка в локальном Excalidraw viewer | [x] Новые таблицы, все столбцы и FK с привязками; после переноса user_app_access стрелка CASCADE не пересекает таблицы, заголовок и легенда видны. |
+| Deployment flag matrix | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/cap-playwright SUPERAPP_TEST_NETWORK=cap-admin-check-20261015_default python3 superapp/flags-smoke.py --browser` | [x] 4×29 HTTP checks и 4/4 browser runs; общий вход остаётся доступным при обоих выключенных флагах. Изолированная сеть. |
+
+| Окончательная изолированная приёмка | `python3 /private/tmp/cap-superapp-admin-20261015/acceptance.py` запускает `CI=1 PLAYWRIGHT_BROWSERS_PATH=/private/tmp/cap-playwright COMPOSE_FILE=<budget-compose>:<temporary-secrets-override> E2E_USERNAME=<test-owner> E2E_PASSWORD=<env-only> make acceptance SMOKE_PROJECT=cap-admin-acceptance-20261015 SMOKE_PORT=50015 'SMOKE_ENV=BIND_HOST=127.0.0.1 APP_PORT=50015 TRUSTED_HOSTS=127.0.0.1,localhost SESSION_COOKIE_SECURE=0 APP_IMAGE_TAG=admin-acceptance-20261015'` | [x] exit 0: Ruff/TypeScript, 149 pytest, 90 Vitest (19 files), сборка/Compose ready, 5 Playwright passed, 0 failed/skipped. CI использует workers=1; это не доказывает исправление прежней параллельной гонки TD-011. Новая PostgreSQL и синтетический владелец, рабочие данные не использовались. |
+| Окончательный API на PostgreSQL | `SUPERAPP_DISPOSABLE=1 SUPERAPP_URL=http://127.0.0.1:<isolated-port> E2E_USERNAME=<test-owner> E2E_PASSWORD=<env-only> python3 superapp/admin-integration-smoke.py` | [x] 98 проверок: все 29 таблиц, маскирование, CRUD и ревизии, запрет чужих связей, два пользователя, глобальный и персональный доступ, закрытие обоих приложений и сохранение административного доступа. |
+| PostgreSQL scope/схема/роли | `docker exec -i -e SUPERAPP_DISPOSABLE=1 cap-admin-check-20261015-budget-app-1 python - < superapp/admin-postgres-smoke.py` | [x] 29 таблиц совпадают с metadata; FORCE RLS новых таблиц, отсутствие elevated runtime privileges, скрытые чужие/нескопированные строки, отказ runtime-записи обычному пользователю, diagnostic SELECT всех таблиц без write privileges, CHECK/FK/ON DELETE CASCADE на синтетических записях. |
+| Дополнительная статика | `budget-planner/backend/.venv/bin/python -m ruff check superapp/admin-integration-smoke.py superapp/admin-postgres-smoke.py superapp/flags-smoke.py`; `node --check superapp/www/admin.js`; `node --check superapp/www/home.js`; `docker compose -f compose.production.yaml config --quiet` | [x] Прошли на окончательном дереве. |
+
+Дополнительные проверки после общей приёмки:
+
+- `SUPERAPP_TEST_STATE=/private/tmp/cap-superapp-admin-20261015/state.json PLAYWRIGHT_CHANNEL=chrome node superapp/admin-live-smoke.mjs` — прошёл против окончательной PostgreSQL: 29 таблиц, возврат после общего входа в `/admin/`, пользователь и маски, account CRUD, персональный запрет фото с 403, создание release draft, отказ не-администратору.
+- Визуальная проверка обнаружила сжатие строк бокового каталога с длинными названиями. CSS исправлен (`grid-auto-rows: max-content`); повторный `PLAYWRIGHT_CHANNEL=chrome node superapp/admin-browser-smoke.mjs` с 29 таблицами прошёл. Проверены границы соседних элементов и текстовых областей, desktop dark и 320×740. Снимки `/private/tmp/cap-admin-desktop-dark.png`, `/private/tmp/cap-admin-mobile-viewport-dark.png` просмотрены.
+- В локальный корневой `compose.yaml` добавлен такой же `migrate` job до backend. `docker compose config --quiet` и `docker compose -f compose.production.yaml config --quiet` прошли; независимый read-only review подтвердил секреты, сеть и зависимость. Корневой local Compose отдельно не запускался: он подключается к существующей пользовательской PostgreSQL. Сам migration job проверен в изолированном production Compose выше.
+- Оба disposable Compose project остановлены, их сети удалены; временные credentials и `.tmp-admin-check` удалены. Named volumes оставлены согласно процедуре без `down -v`; рабочие стеки не менялись.
+
+Контейнеры: Python 3.13.15, PostgreSQL 17.11 arm64; host Docker 29.2.1,
+Compose 5.1.3, Ruff 0.12.11, Playwright 1.63.0 / Chromium 153.0.8010.12.
+Окончательный `cap-budget:admin-check-20261015`:
+`sha256:b295c2a3c3b39bf47c5869893155459d68de4bf9875b6277c68b871ec8bded08`.
+Использован кеш зависимостей; изменённые backend/frontend скопированы и
+собраны заново. Начальная ошибка macOS sandbox при запуске Chromium решена
+разрешённым запуском изолированных браузерных тестов вне sandbox.
+
+Проверена свежая PostgreSQL миграция до `0013`. Обновление исторического
+production snapshot отдельно не прогонялось. Публикация в реальный сервис и
+рассылка настоящим пользователям не выполнялись. Все следующие разделы
+относятся к предыдущим задачам и сохранены как исторические результаты.
+
+## Работающий local budget → аккаунт asimonov: 2026-10-14
+
+Исправлен источник переноса: архив от 6 октября содержал только 22 операции
+и 5 переводов; работающая локальная PostgreSQL `budget-planner-postgres-1`,
+база `budget`, содержит 54/10. Её согласованный экспорт зарегистрирован
+как 0004 (`local-budget-live`, 175202 bytes, SHA256
+`74f9400b22be8d158c069ac9bf12789b4ed4b801f893063573e6201ff55acfea`).
+Перед выполнением текущие counts/checksums всех таблиц бюджета локальной
+базы повторно сопоставлены с 0004 и совпали. Локальный источник — owner ID 1;
+получатель — существующий продовый asimonov ID 1. Изменения после 2 октября
+не фильтровались: переносилось полное актуальное состояние его бюджета.
+
+Код приложения, схема 0012, версия 0.1.4 и native amd64 image
+`sha256:64b85cad2252720c855cde21f016080606cbd8064aa3c3208f799e3623fe3619`
+не менялись. Git base `82db3f8e4cc6224a8546e2051857e51b831b6fd9`, прежнее
+dirty tree сохранено, новых коммитов нет. Добавлен инфраструктурный сценарий
+`deploy/transfer_user_budget.py`. Среда: macOS Python 3.14.5; VM Ubuntu
+24.04.5, host Python 3.12, container Python 3.13.15, PostgreSQL 17,
+Compose 2.40.3. Локальный экспорт выполнен ранее через закреплённый
+`pg_export_snapshot`; зарегистрированная дата UTC — 13 октября,
+время снимка — 14 октября 00:04 МСК.
+
+| Проверка | Команда / действие | Результат и границы |
+| --- | --- | --- |
+| Static check | `budget-planner/backend/.venv/bin/python -m ruff check deploy/transfer_user_budget.py`; `ast.parse` host controller | [x] Прошли. Полные gates приложения повторно не запускались: его code/image/schema неизменны; актуальные PostgreSQL/API проверки ниже выполнены на том же 0.1.4. |
+| Исходный дамп | `python3 /private/tmp/cap-account-transfer-20261014/control.py upload`, затем `stage` | [x] SHA256 0004 на VM совпал; restore в отдельную базу и migration job текущего image прошли. Counts/MD5 всех 28 таблиц совпали с source proof до и после миграций. Изолированный smoke двух новых пользователей прошёл. |
+| Checkpoint | Тот же controller: `pause`, `download` | [x] Во время обслуживания сохранён полный прод 0005, SHA256 `0e3b34aaafb04fa684cfbb4c4b34d6536a48f5f21b57ae8108bb9a525f4caa55`; скачан и проверен локально до изменения бюджета. |
+| Проверка копирования | `python3 /private/tmp/cap-account-transfer-20261014/finish.py`: phase `probe` host helper | [x] На отдельной базе из checkpoint 0005 выполнен перенос 23 таблиц только user_id=1. Counts/MD5 совпали с local source; все глобальные auth/notification таблицы и строки других пользователей сохранились. Неверный логин owner отклонён без изменения строк; повторный перенос дал те же данные без дублей. |
+| Авторизованный API probe | Тот же phase probe запускает изолированный budget-app на localhost:18316 | [x] Вход именно asimonov ID 1: accounts=8, transactions=54, transfers=10. Другой временный пользователь не видит его счета; logout первого не завершает сессию второго. Для этого пароль изменён исключительно в disposable probe, production пароль не менялся. Probe container и БД удалены. |
+| Продовый перенос | Phase `apply`: `transfer_user_budget.py --source-database cap_candidate_r20261014_114645_4994 --target-database budget --source-user-id 1 --target-user-id 1 --target-username asimonov` через admin maintenance container | [x] Одна SERIALIZABLE transaction; зависимости удалены child-first/добавлены parent-first, source IDs сохранены, чужие PK защищены проверкой коллизий. 23 таблицы бюджета совпали по counts/MD5. Пользователи, пароли, сессии, уведомления, release notes и другие владельцы не изменились; проверены до commit и после запуска приложения. |
+| Реальная production RLS | Read-only SQL через работающий budget-app с runtime role и `app.current_user_id=1`, затем отдельной транзакцией ID 4 | [x] Аккаунт asimonov ID 1 active/admin: 8 счетов, 54 операции, 10 переводов, 10 категорий, 6 плановых статей; 32 операции датированы после 2026-10-02. Другому пользователю ID 4 доступны 0/0/0. Настоящий пользователь паролем в HTTP-прод не входил; это PostgreSQL RLS проверка без записи в продовые данные. |
+| Публичная доступность | `urllib` GET доверенного HTTPS `/`, `/budget/login`, `/api/v1/health/ready`, `/api/v1/accounts`, `/photo/`; `db_dump_registry.py verify 0004` / `0005` | [x] 200/200/200/401/404; оба дампа проходят SHA256. Фото остаётся закрытым. |
+
+Receipt:
+`backups-external/db-registry/restore-events/4d3822d71a8a4aaa8a797392b48fbdbd.json`.
+Обновлялись данные пользователя, поэтому новый application release и повторная
+публикация release note не выполнялись. Все предыдущие результаты ниже —
+исторические и не являются утверждением, что текущий бюджет равен архиву 0001.
+
+## Локальный реестр и восстановление 0001: 2026-10-13
+
+Приложение осталось на 0.1.4, образ
+`sha256:64b85cad2252720c855cde21f016080606cbd8064aa3c3208f799e3623fe3619`.
+Git commit `82db3f8e4cc6224a8546e2051857e51b831b6fd9` и прежнее dirty tree
+сохранены; новых коммитов нет. Изменены только инфраструктурные сценарии,
+ignore и документация. Код приложения и схема 0012 не менялись.
+Среда: локальный Python 3.14.5; VM Ubuntu 24.04.5, host Python 3.12,
+Compose 2.40.3, PostgreSQL 17; приложение использует Python 3.13.15.
+
+| Проверка | Команда / действие | Результат и границы |
+| --- | --- | --- |
+| Локальный каталог | `python3 -m unittest discover -s deploy -p 'test_db_dump_registry.py' -v` | [x] 7 passed, 0 failed/skipped: приватные права, независимая копия, повторный импорт, повреждение, неправильный формат/SHA, путь вне каталога, orphan и receipt без checkpoint. Fixtures проверяют каталог; они не изображают успешный PostgreSQL restore. |
+| Статическая проверка | `budget-planner/backend/.venv/bin/python -m ruff check deploy/db_dump_registry.py deploy/test_db_dump_registry.py deploy/restore_db.py`; `ast.parse` обоих сценариев | [x] Прошли. Gates приложения повторно не запускались: его дерево, image и схема не менялись с прогона 0.1.4 выше. |
+| Первый дамп | `python3 deploy/db_dump_registry.py add superapp/.local-recovery-20261008/recovery/budget.dump --origin local-recovery-20261008 --snapshot-date 2026-10-06 --proof /private/tmp/cap-db-registry-20261013/local-proof.json --expected-sha256 860fbe41a44f60e6b7e363d01702308348f68841873904f3bdb94d9817960c68`; `verify` | [x] Зарегистрирован 0001: 169260 bytes, исходный SHA256 совпал. Дамп не содержит изменений после 6 октября. |
+| Пробное восстановление | `python3 /private/tmp/cap-db-registry-20261013/control.py upload`, затем `stage`; на VM `python3 /opt/cap/deploy/restore_db.py stage /opt/cap/recovery/db-registry/r20261013_200132_2b60` | [x] `pg_restore --no-owner --no-acl --single-transaction --exit-on-error` в отдельную базу, migration job текущего image, совпадение counts/MD5 всех 28 таблиц до и после миграций. В отдельном клоне зарегистрированы два временных пользователя: вход/выход, создание счёта и RLS — второй не видит счёт первого или восемь исходных счетов; после выхода первого второй сохраняет сессию. Тестовый контейнер и только его probe БД удалены. Двухшаговый rename в одной транзакции отдельно выполнен в probe БД. |
+| Checkpoint и переключение | `python3 /private/tmp/cap-db-registry-20261013/control.py switch` вызывает `pause`, `download`, `activate` | [x] Во время обслуживания сохранён полный дамп прежнего прода 0002: 170098 bytes, SHA256 `b9b9bce56ad97248d3c355a3d9b88fec9bb82a115821128cc190805ec4cf1b08`. Он скачан и проверен локально до переключения. Подготовленная база атомарно переименована в `budget`, прежняя сохранена с запрещёнными подключениями. Операция завершилась в 20:08:24 UTC. |
+| Сохранность и версия | `restore_db.py activate` проверяет текущий image, данные и health после запуска; отдельно `python -c 'import app; print(app.__version__)'` в production container | [x] 0.1.4, та же image. Данные исходного дампа совпали по всем таблицам, кроме намеренно сохранённых `release_notes`/`notifications`: 1 опубликованная запись и 3 прежних уведомления, checksum опубликованной записи не изменился. 3 пользователя, 8 счетов, 22 операции. Пароли пользователей не сбрасывались. |
+| Публичный прод | Python `urllib` GET `/`, `/budget/login`, `/api/v1/health/ready`, `/api/v1/accounts`, `/apps.json`, `/photo/`, `/photo-api/auth/me` по доверенному HTTPS | [x] Главная/вход/ready — 200; guest accounts — 401; flags 1/0; фото — 404. Это проверка доступности после переключения; реальный пользователь продовой сессией не входил. |
+| Реестр и receipt | `python3 deploy/db_dump_registry.py verify`; `record-restore 0001 --rollback-id 0002 --receipt ...` | [x] Обе копии проходят SHA256. Receipt: `backups-external/db-registry/restore-events/1e11ced53709463181a7aaaf80243be3.json`. Дампы и receipt приватны, исключены из Git; облачное хранилище и расписание не создавались. |
+
+Автоматическая ветка rollback подготовлена, но её отказ после успешного
+переключения намеренно не провоцировался на рабочем проде. Прежняя база и
+локальный checkpoint сохранены для восстановления при необходимости.
+
+## Выкладка 0.1.4 в Timeweb: 2026-10-13
+
+Рабочее дерево поверх `82db3f8e4cc6224a8546e2051857e51b831b6fd9` остаётся
+незакоммиченным; прежние правки пользователя сохранены. Корневой `cap`
+не имеет коммитов. В этой задаче добавлен отдельный production Compose,
+изменена версия пакетов на 0.1.4 и подготовлен release note. Схема БД и
+логика приложения не менялись. Архив исходников 0.1.4 имеет SHA256
+`582d37e034003e50c4cce869a16fefc54354187dde6219f48bb1698f8b5fe7f8`.
+
+Локальная среда: macOS arm64, Node.js 26.4.0, npm 12.1.0,
+backend Python 3.13.13; вспомогательные сценарии выполнялись Python 3.14.5.
+VM: Ubuntu 24.04.5, linux/amd64, Docker 29.1.3, Compose 2.40.3.
+Образ `cap-budget:0.1.4` собран непосредственно на VM с закреплёнными
+Node 22.19.0 и Python 3.13.15; digest
+`sha256:64b85cad2252720c855cde21f016080606cbd8064aa3c3208f799e3623fe3619`.
+
+| Проверка | Команда / действие | Результат и границы |
+| --- | --- | --- |
+| Gates версии 0.1.4 | `make lint test build` из `budget-planner/` | [x] Ruff, TypeScript, 128 pytest и 89 Vitest прошли, 0 skipped; SPA build и Compose config прошли. В pytest остаётся предупреждение Starlette/AnyIO, в Vite — большой chunk и внешний `/contour.css`. Backend fixtures используют SQLite. |
+| Изолированная приёмка | `python3 /private/tmp/cap-vk-20261013/run-acceptance-014.py`, внутри `make -o lint -o test -o build acceptance SMOKE_PROJECT=cap-budget-acceptance-20261013-014-c SMOKE_PORT=18314` | [~] Новая PostgreSQL, текущие миграции и ready прошли. Временный владелец задан через `E2E_USERNAME`/`E2E_PASSWORD`; production БД не использовалась. Gates уже прошли на том же дереве и исключены из повторного запуска через `-o`. Playwright: 4 passed, 1 failed, 0 skipped: сценарий PDF-скилла застал загрузочный экран и превысил 30 секунд в параллельном прогоне. Первые попытки были заблокированы отсутствующим browser path и sandbox MachPort; успешный запуск Chromium потребовал разрешения вне sandbox. |
+| Отдельная проверка PDF-скилла | `python3 /private/tmp/cap-vk-20261013/run-skill-e2e-014.py`, внутри `BASE_URL=http://127.0.0.1:18314 npm --prefix e2e test -- --workers=1 --grep 'bank PDF skill'` с временными credentials | [x] 1 passed, 0 failed, 0 skipped на отдельной PostgreSQL `cap-budget-acceptance-20261013-014-d`: popup открыт, скачанный Markdown совпадает с исходником. Это не отменяет сбой параллельной приёмки; см. TD-011. Временные Compose projects остановлены без удаления томов. |
+| Восстановление на VM | `pg_restore --no-owner --no-acl --single-transaction --exit-on-error` в пустой `budget`; `python3 /opt/cap/recovery/verify-restored.py` до публикации | [x] Проверены 28 таблиц по одобренной копии от 6 октября; количества и MD5 отсортированных `row_to_json` совпали, кроме ожидаемого нового draft в `release_notes`. 3 пользователя, 8 счетов, 22 операции; схема 0012. Черновик сначала сохранён, затем опубликован после проверки работающей версии. Новые release note и 3 уведомления являются ожидаемыми изменениями служебных таблиц. |
+| Production stack | `/opt/cap/deploy/run-production.sh --progress plain up -d --no-build --wait`; `ps -a` | [x] Native amd64 image 0.1.4; postgres и budget-app healthy, gateway работает, migrate exited 0. Запущены только postgres/budget-app/gateway. Порты PostgreSQL и приложения наружу не опубликованы; gateway слушает `127.0.0.1:8083`. |
+| Публичные маршруты | Python `urllib` GET к `https://asimonov.space`: `/`, `/settings/`, `/budget/login`, `/apps.json`, `/api/v1/health/ready`, `/api/v1/auth/me`, `/api/v1/accounts`, `/photo`, `/photo/`, `/photo-api/health`, `/photo-api/auth/me`; отдельно `https://www.asimonov.space/` | [x] Обе HTTPS-версии главной отвечают 200 с проверкой доверенного сертификата; ready=ok; flags budget=1/photo=0; гостевой доступ к auth/accounts — 401; все фото-маршруты — 404. |
+| Публичный браузер | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SUPERAPP_URL=https://asimonov.space EXPECT_BUDGET_ENABLED=1 EXPECT_PHOTO_ENABLED=0 node superapp/flags-browser-smoke.mjs`; отдельно Codex Browser | [x] Карточка бюджета видна, фото скрыто; оформление, сохранение настроек, меню при 320 px и переход ко входу прошли. В smoke добавлено ожидание инициализации radio и главной после переходов; прежние мгновенные проверки срабатывали до загрузки JS по сети. Реальный пользователь production не входил; рабочие финансовые данные этот прогон не изменяет. |
+| SSL | `certbot certonly --webroot -w /var/www/letsencrypt -d asimonov.space -d www.asimonov.space --non-interactive --agree-tos --register-unsafely-without-email`; `nginx -t`; `systemctl is-active certbot.timer` | [x] Доверенный ECDSA сертификат до 2027-01-11, HTTP перенаправляется на HTTPS, timer активен, deploy hook проверяет и reload Nginx. HTTP-01 webroot доступен на 80 и 443. Первый production challenge для www не прошёл; повторный выпуск прошёл. |
+| Продление SSL | `certbot renew --dry-run --no-random-sleep-on-renew --run-deploy-hooks` | [x] Exit 0: `all simulated renewals succeeded`; deploy hook выполнил успешный `nginx -t` и reload. Предыдущие тестовые challenges получили сетевые ошибки; перед итоговым прогоном webroot добавлен также на 443. Диагностическая попытка с timeout 150 секунд не дошла до проверки из-за случайной паузы Certbot 451 секунду; эта пауза отключена только флагом итогового теста. Штатный timer сохраняет стандартное поведение. Файлы результата и TCP-диагностики находятся в `/opt/cap/recovery/renewal-test.log` и `acme-network.log`. |
+| Release note | Maintenance вызывает штатные обработчики draft/publish из миграционного контейнера | [x] 0.1.4 опубликован один раз, получено `delivered=3`; опубликованные записи не изменялись. Пароли существующих пользователей не сбрасывались, email не отправлялся. |
+
+Ограничения: полной проверки RLS на PostgreSQL с финансовыми действиями двух
+пользователей и входа настоящего пользователя на VM этот прогон не даёт.
+Копия не содержит изменений после 6 октября. Облачные бэкапы и S3 не созданы.
+
+## Минимальный отдельный стек: 2026-10-13
+
+Проверено рабочее дерево поверх
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`; существующие незакоммиченные
+изменения приложения сохранены. Корневой `cap` не имеет коммитов. Добавлены
+`compose.production.yaml`, пример env и сценарии запуска/создания секретов;
+логика приложения и схема базы в этом локальном прогоне не менялись. Прогон
+выполнен до изменения версии пакетов на 0.1.4. Среда: macOS arm64,
+локальный Node.js 26.4.0, Python backend 3.13.13, Docker Compose 5.1.3.
+Docker-сборка использовала закреплённые Node 22.19.0 и Python 3.13.15.
+
+| Проверка | Команда | Результат и границы |
+| --- | --- | --- |
+| Repository gates | `make lint test build` из `budget-planner/` | [x] Ruff/TypeScript, 128 backend и 89 frontend тестов, SPA build и Compose config прошли. Backend fixture использует SQLite; локальный Node отличается от закреплённого Docker Node. |
+| Синтаксис новой конфигурации | `bash -n deploy/run-production.sh`; `python3 -m py_compile deploy/init-production-secrets.py`; `docker compose -f compose.production.yaml config --quiet` | [x] Прошли. При `PHOTO_ENABLED=0` активны postgres/migrate/budget-app/gateway; профиль `photo` добавляет фотосервисы. |
+| Реальный запуск | `DOCKER_HOST=unix:///Users/asimonov05/.colima/default/docker.sock DOCKER_CONFIG=/private/tmp/cap-vk-20261013/docker CAP_ENV_FILE=/private/tmp/cap-vk-20261013/test.env deploy/run-production.sh --progress plain up -d --build --wait`, затем `up -d --no-build --wait` после исправлений конфигурации | [x] Проект `cap-minimal-check-20261013`, порт 18313, новая PostgreSQL. Устранены дублирующая сборка одного image tag и неверное разбиение tmpfs. Migration job завершился с кодом 0, backend и PostgreSQL healthy, шлюз отвечает. Фотосервисы не запущены. |
+| Маршруты и авторизация | `python3 /private/tmp/cap-vk-20261013/check_runtime.py` | [x] Главная, настройки, вход и ready доступны; `/apps.json` содержит budget=1/photo=0; фото и его API отвечают 404. Тестовый владелец входит и выходит, второй пользователь сохраняет отдельную действующую сессию. Это API smoke, а не полный browser/E2E или доказательство всех RLS-сценариев. |
+| Восстановление | Та же команда: `pg_restore --no-owner --no-acl --single-transaction --exit-on-error` в отдельную базу `cap_restore_*`, затем текущий migrate job | [x] Одобренная копия от 6 октября восстановлена. Количества строк во всех 28 таблицах совпали с `recovery/state.json`; контрольные суммы строк до и после текущих миграций совпали; схема 0012. Пользовательская рабочая база не использовалась. |
+
+Полный `make acceptance`, авторизованные браузерные сценарии новой
+production-конфигурации, проверка linux/amd64, HTTPS и фактическая выкладка
+на новую облачную VM не подтверждаются этим архивным локальным прогоном;
+актуальные результаты 0.1.4 приведены выше.
+
+## Подсказки до выбора счёта: 2026-10-09
+
+Проверено незакоммиченное дерево поверх
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`; ранее начатые правки
+интерфейса, API и документации сохранены. Корневой `cap` не имеет коммитов.
+Исправлена передача пустого `account_id` из формы подсказок и добавлен
+регрессионный тест. API и схема базы не менялись. Среда: macOS arm64,
+Python 3.13.13, Node.js 26.4.0, npm 12.1.0, Docker CLI 29.4.3 /
+Engine 29.2.1, Compose 5.1.3, Playwright 1.63.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Воспроизведение и регрессия | `npm --prefix frontend test -- src/pages/Resources.test.tsx -t 'suggests operations by title before an account is selected'` до исправления; затем `npm --prefix frontend test -- src/pages/Resources.test.tsx` | [x] До исправления новый тест упал: запрос содержал `account_id=`. После исправления 25/25 тестов прошли: подсказка видна до выбора счёта, её выбор подставляет счёт; существующий тест подтверждает передачу выбранного счёта | DOM-тест использует mock API; общая сериализация пустых значений в `queryString` не менялась |
+| Repository gates | `make lint`; `make test`; `make build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 128 backend и 89 frontend тестов прошли; Vite build и Compose config прошли | Backend fixture использует SQLite; Vite предупредил о размере чанка и внешнем `/contour.css` |
+| Изолированная приёмка | `DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-no-account-20261009-a SMOKE_PORT=18140 E2E_USERNAME=owner E2E_PASSWORD=<временный тестовый пароль> make acceptance` после `docker compose -p budget-no-account-20261009-a up -d --build --wait` и `docker compose -p budget-no-account-20261009-a exec -T app python -m app.cli init-admin` | [~] Новая PostgreSQL, миграция, `ready`, повторные lint/test/build прошли; Playwright: 3 passed, 2 failed, 0 skipped | Авторизованный мобильный «Обзор» снова вышел за 360 px (365 px, TD-010); тест PDF-скилла в этом прогоне превысил 30 с, ожидая popup. Проект остановлен, том сохранён |
+| Браузерный путь подсказки | `docker compose -p budget-no-account-browser-20261009-b up -d --no-build --wait`; `docker compose -p budget-no-account-browser-20261009-b exec -T app python -m app.cli init-admin`; Python `urllib` создал счёт и расход; Playwright Chromium вошёл в `/transactions`, ввёл «Коф» до выбора счёта и выбрал «Кофе тест» | [x] Запрос подсказок без `account_id` ответил 200; подсказка появилась, выбор заполнил название и счёт | Отдельная disposable PostgreSQL и тестовый владелец; проект остановлен без удаления тома |
+| Локальный cap space | `DOCKER_CONFIG=/private/tmp/cap-docker docker compose build budget-app`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --no-deps --force-recreate --wait budget-app`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose restart gateway`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` | [x] Локальный бюджет healthy; `/`, `/budget/`, `/photo/` и оба API ответили 200; гостевой браузерный smoke прошёл | Существующая база и тома не пересоздавались; вход в локальную пользовательскую сессию не проверялся |
+
+## Подсказки операций по названию: 2026-10-08
+
+Проверено незакоммиченное дерево поверх
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`. До задачи уже были
+изменения интерфейса и документации; корневой `cap` не имеет коммитов.
+Изменены выборка подсказок, её backend-тест и проверка запроса из формы.
+Схема базы не менялась. Среда: macOS arm64, Python 3.13.13, pytest 8.4.2,
+Node.js 26.4.0, npm 12.1.0, Docker CLI 29.4.3 / Engine 29.2.1,
+Compose 5.1.3, Playwright 1.63.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Узкие тесты | `backend/.venv/bin/python -m pytest -q backend/tests/test_transaction_suggestions.py`; `npm --prefix frontend test -- src/pages/Resources.test.tsx` из `budget-planner/` | [x] 5 backend и 24 frontend теста прошли; проверены точное название с другого счёта после 101 новых частичных совпадений и передача названия и счёта из формы | Backend fixture использует SQLite, frontend проверяет DOM и запрос с mock API |
+| Repository gates | `make lint`; `make test`; `make build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 128 backend и 88 frontend тестов прошли; Vite build и Compose config прошли | Vite предупредил о размере чанка; `/contour.css` разрешается шлюзом во время выполнения |
+| Изолированная приёмка | `DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-title-suggestions-20261008-a SMOKE_PORT=18138 E2E_USERNAME=owner E2E_PASSWORD=<временный тестовый пароль> make acceptance` после `docker compose -p budget-title-suggestions-20261008-a up -d --build --wait` и `docker compose -p budget-title-suggestions-20261008-a exec -T app python -m app.cli init-admin` | [~] Новая PostgreSQL база, миграция, `ready` и повторные lint/test/build прошли; 5 браузерных сценариев не запустились из-за запрета macOS Mach port в песочнице | Это ошибка запуска Chromium до открытия страниц; проект остановлен, тестовый том сохранён |
+| Live PostgreSQL API | `docker compose -p budget-title-suggestions-20261008-b up -d --no-build --wait`; `docker compose -p budget-title-suggestions-20261008-b exec -T app python -m app.cli init-admin`; Python `urllib` вызовы `POST /auth/login`, `POST /accounts`, 102 × `POST /transactions`, `GET /transactions/suggestions?query=Кофе&type=expense&account_id=…` | [x] 200/201; старый точный «Кофе» с другого счёта оказался первым после 101 новых «Кофейня …» с выбранного счёта | Использована отдельная одноразовая база и тестовый владелец; другие операции и типы проверены unit-тестами |
+| Браузер вне песочницы | `BASE_URL=http://127.0.0.1:18139 E2E_USERNAME=owner E2E_PASSWORD=<временный тестовый пароль> PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 npm --prefix e2e test -- --workers=1` | [~] 4 passed, 1 failed, 0 skipped. Мобильный авторизованный «Обзор» имеет `document.scrollWidth=365` при viewport 360 px (TD-010) | Известный дефект компоновки вне области подсказок; проект остановлен без удаления тома |
+
+## Удаление оформления из настроек бюджета: 2026-10-08
+
+Проверено незакоммиченное дерево поверх
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`. До этой задачи в дереве уже
+были изменения оформления cap space, `BankPdfGuide` и E2E; корневой `cap` не
+имеет коммитов. Изменены страница настроек бюджета, её тест, CSS и текущая
+документация; API и схема базы не менялись. Среда: macOS arm64,
+Python 3.13.13 в venv бюджета, Node.js 26.4.0, npm 12.1.0,
+Docker 29.4.3, Compose 5.1.3, Playwright 1.63.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Настройки бюджета | `npm --prefix frontend test -- src/pages/Settings.test.tsx` из `budget-planner/` | [x] 1 файл, 7 тестов прошли; пункт и радиокнопки оформления отсутствуют | DOM-тест не проверяет production сборку |
+| Repository gates | `make lint`, `make test`, `make build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 127 backend и 88 frontend тестов прошли; Vite build и Compose config прошли | Backend fixture использует SQLite; Vite предупредил о размере JS чанка |
+| Сборка и переходы | `VITE_BASE_PATH=/budget/ npm --prefix budget-planner/frontend run build`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/appearance-integration-smoke.mjs` из корня `cap` | [x] Production сборка прошла; браузер с тестовой сессией открыл `/budget/settings` без оформления, общая тема действует в бюджете и фото | Тестовая авторизация подменена; реальные финансовые данные не использовались |
+| Изолированная приёмка | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-no-appearance-20261008 SMOKE_PORT=18123 make -o lint -o test -o build acceptance` из `budget-planner/` | [~] Отдельная PostgreSQL, миграция и ready прошли; Playwright: 2 passed, 3 skipped; контейнеры остановлены без удаления тома | Gates пропущены в этом вызове, поскольку прошли отдельно выше. Тестового владельца не создавали; авторизованные сценарии пропущены |
+| Локальный стенд | `DOCKER_CONFIG=/private/tmp/cap-docker docker compose build budget-app`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --no-deps --force-recreate --wait budget-app`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` из корня `cap` | [x] Контейнер бюджета healthy, гостевые переходы супераппа прошли | Реальный авторизованный экран после перезапуска не открывали; данные и тома не пересоздавались |
+
+Неиспользуемые стили локального экрана оформления удалены. Ключи
+`contour-*` и применение сохранённой темы в бюджете оставлены для работы
+общих настроек cap space.
+
+## Переименование интерфейса в cap space: 2026-10-08
+
+Проверено незакоммиченное дерево бюджета поверх
+`82db3f8e4cc6224a8546e2051857e51b831b6fd9`. До переименования в нём уже
+были незакоммиченные изменения оформления, `BankPdfGuide` и E2E; корневой `cap`
+не имеет коммитов. Среда: macOS arm64, Python 3.13.13 в venv бюджета,
+Node.js 26.4.0, npm 12.1.0, Docker 29.4.3, Compose 5.1.3,
+Playwright 1.63.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Изменённые экраны | `npm --prefix frontend test -- src/pages/Settings.test.tsx src/App.test.tsx src/components/Layout.test.tsx` из `budget-planner/` | [x] 3 файла, 15 тестов прошли | DOM-тесты не показывают компоновку |
+| Repository gates | `make lint`, `make test`, `make build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 127 backend и 88 frontend тестов прошли; Vite build и Compose config прошли | Backend fixture использует SQLite; Vite предупредил о размере JS чанка |
+| Сборка супераппа | `VITE_BASE_PATH=/budget/ npm --prefix budget-planner/frontend run build` из корня `cap`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/appearance-integration-smoke.mjs` | [x] Сборка прошла; общий бренд и настройки проверены на собранных главной, входе бюджета и фоторазделе | Авторизация в интеграционном браузерном тесте подменена |
+| Флаги и узкий экран | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SUPERAPP_SCREENSHOT_DIR=/private/tmp/cap-rename-screens python3 superapp/flags-smoke.py --browser` | [x] 70 HTTP проверок и 4 browser-сценария прошли; снимки 1280 и 320 CSS px просмотрены | Использованы временные шлюзы; реальные данные не менялись |
+| Локальный стенд | `DOCKER_CONFIG=/private/tmp/cap-docker docker compose build budget-app`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --no-deps --force-recreate --wait budget-app`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` | [x] Бюджет healthy; главная, оформление и общий гостевой вход показывают `cap space`; мобильная компоновка прошла | Реальный вход под учётной записью не проверялся; данные и тома не пересоздавались |
+
+Технические ключи `contour-*` и названия CSS-файлов сохранены для совместимости
+с выбором темы, сделанным до переименования. Архивную заметку релиза `0.1.3`
+не переписывали.
+
+## Общее оформление супераппа: 2026-10-07
+
+Проверено рабочее дерево бюджета поверх `82db3f8e4cc6224a8546e2051857e51b831b6fd9`.
+Дерево было грязным до этой задачи и остаётся грязным: кроме изменений оформления
+в нём есть ранее начатая правка `BankPdfGuide` и E2E. Корневой `cap` пока не
+имеет коммитов. Среда: macOS arm64, Python 3.13.13 в venv бюджета
+(хостовый Python 3.14.5), Node.js 26.4.0, npm 12.1.0, Docker 29.4.3,
+Compose 5.1.3, Playwright 1.63.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Тема и настройки бюджета | `npm --prefix budget-planner/frontend test -- src/lib/theme.test.tsx src/pages/Settings.test.tsx` | [x] 2 файла, 12 тестов прошли; включая перенос прежних ключей и событие другой вкладки | DOM-тесты не измеряют внешний вид |
+| Repository gates | `make lint`, `make test`, `make build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 127 backend и 88 frontend тестов прошли; Vite build и Compose config прошли | Backend fixture использует SQLite; сборка предупреждает о размере чанка |
+| Сборки супераппа | `VITE_BASE_PATH=/budget/ npm --prefix frontend run build` из `budget-planner/`; `VITE_BASE_PATH=/photo/ VITE_API_BASE_URL=/photo-api VITE_SUPERAPP=1 npm --prefix frontend run build` из `photo-access/` | [x] Обе production сборки прошли | Общий CSS и JS разрешаются шлюзом во время выполнения; Vite предупреждает, что они отсутствуют внутри отдельных build contexts |
+| Флаги и маршруты | `python3 superapp/flags-smoke.py`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SUPERAPP_SCREENSHOT_DIR=/private/tmp/cap-appearance-screens python3 superapp/flags-smoke.py --browser` | [x] 70 HTTP проверок и 4 гостевых browser-сценария прошли для всех сочетаний флагов | Использованы текущие backend контейнеры без изменения данных; временные шлюзы удалены |
+| Переходы между приложениями | `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/appearance-integration-smoke.mjs` после двух сборок выше | [x] Тёмная и системная темы, акцент и шрифт сохранились на главной, входе бюджета и фоторазделе при 360 CSS px; горизонтального переполнения нет | Авторизация в тесте подменена; реальная сессия и операции с PostgreSQL не проверялись |
+| Изолированная приёмка бюджета | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 SMOKE_PROJECT=budget-appearance-20261007-c SMOKE_PORT=18122 make -o lint -o test -o build acceptance` | [~] Отдельные PostgreSQL, миграция и ready прошли; Playwright: 2 passed, 3 skipped; проект остановлен без удаления тома | `lint`, `test`, `build` пропущены в этом вызове, поскольку прошли отдельно на финальном дереве. Тестового владельца не создавали, поэтому авторизованные сценарии пропущены |
+| Локальный суперапп | `DOCKER_CONFIG=/private/tmp/cap-docker docker compose build budget-app photo-frontend`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --no-deps --force-recreate --wait budget-app photo-frontend`; `DOCKER_CONFIG=/private/tmp/cap-docker docker compose up -d --no-deps --force-recreate gateway`; `PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node superapp/browser-smoke.mjs` | [x] Образы собраны, сервисы работают; `/`, `/appearance/`, CSS, JS, общий вход, фото и health отвечают 200; гостевой переход, оформление и 360 CSS px прошли | Локальные данные не пересоздавались. Реальный авторизованный сценарий после перезапуска не проверялся |
+
+Визуально просмотрены снимки главной при 1280 и 320 CSS px и настроек при
+320 CSS px. После просмотра исправлены длинные названия шрифтов и отступ
+у ссылки оформления; повторный browser-прогон прошёл. Повышенная контрастность,
+увеличение текста до 200% и измерение контраста каждой цветовой схемы остаются
+непроверенными.
+
+## Открытие и скачивание скилла из супераппа: 2026-10-06
+
+Проверено незакоммиченное дерево поверх `82db3f8e4cc6224a8546e2051857e51b831b6fd9`.
+Изменены `frontend/src/components/BankPdfGuide.tsx`, его unit-тесты и
+`e2e/tests/budget-planner.spec.ts`. Ссылки используют базовый путь сборки:
+`/skills/…` в отдельном бюджете и `/budget/skills/…` в супераппе. Версия
+остаётся `0.1.3`, API и схема базы не менялись. Среда: macOS arm64,
+Python 3.13.13, Node.js 26.4.0, npm 12.1.0, Docker 29.4.3/29.2.1,
+Compose 5.1.3; Docker-сборка использовала закреплённый Node 22.19.0.
+
+| Уровень | Команда / действие | Результат | Граница доказательства |
+| --- | --- | --- | --- |
+| Регрессия ссылок | `npm --prefix frontend test -- src/components/BankPdfGuide.test.tsx` | [x] 4 passed; открытие и скачивание проверены для `/` и `/budget/` | Unit-тест проверяет ссылки и имя файла, а не HTTP |
+| Repository gates | `PATH=/private/tmp/cap-bin:$PATH DOCKER_CONFIG=/private/tmp/cap-docker make lint test build` | [x] Ruff и TypeScript прошли; 127 backend и 86 frontend тестов прошли; production build и Compose config прошли | Backend fixture использует SQLite; Vite предупредил о размере JS чанка |
+| Сборка супераппа | `VITE_BASE_PATH=/budget/ npm --prefix frontend run build`; `./e2e/node_modules/.bin/tsc --project e2e/tsconfig.json --noEmit` | [x] Production SPA с `/budget/` и TypeScript E2E прошли | Локальный Node 26 отличается от закреплённого Docker Node 22 |
+| Изолированная приёмка | `python3 /private/tmp/cap-skill-links-acceptance.py`: disposable проект `budget-skill-links-20261006`, порт `18104`, отдельный тестовый владелец; `make -o lint -o test -o build acceptance` с уникальным `SMOKE_ENV` | [~] PostgreSQL/migration job/ready прошли; Playwright: 4 passed, 1 failed, 0 skipped. Скилл открылся в новой вкладке; скачанный Markdown побайтно совпал с исходным | Gates пропущены в этом make-вызове, поскольку уже прошли отдельной командой выше. Общая приёмка не зелёная: мобильный Обзор имеет ширину 365 px при viewport 360 px (TD-010). Контейнеры остановлены без удаления тома; пользовательская база не использовалась |
+
+Дополнительно проверена схема сохранённой disposable базы:
+`DOCKER_CONFIG=/private/tmp/cap-docker docker compose -p budget-skill-links-20261006 exec -T postgres psql -U budget -d budget -Atqc 'SELECT version_num FROM alembic_version;'`
+вернул `0012`. Для чтения поднимался только тестовый PostgreSQL, после чего
+проект снова остановлен без удаления тома.
+
+На VM выложен функциональный commit `8d1b1114c0954868d3ee95f963ab56fde4f9fb32`
+из `cap-superapp`: `docker compose build budget-app`, затем
+`docker compose up -d --no-deps --wait --wait-timeout 90 budget-app` и
+проверка/reload Nginx шлюза. Новый образ
+`sha256:40509a2171804e4a9a634f9a9a078f4a83250cfd20651d4c4e712f661123bea4`
+healthy; исходники и прежний образ сохранены для отката.
+
+Публичная браузерная проверка
+`PLAYWRIGHT_BROWSERS_PATH=/private/tmp/budget-planner-playwright-012 node --input-type=module`
+на `https://asimonov.space/budget/exchange` подтвердила: обе кнопки ведут на
+`/budget/skills/bank-pdf-to-budget-csv/SKILL.md`, открытие показывает Markdown
+в новой вкладке, скачивание даёт `bank-pdf-to-budget-csv-SKILL.md`, содержимое
+побайтно совпадает с исходным. В браузере подменён только ответ `/auth/me`,
+ассеты и Markdown получены с реальной VM; авторизация реальным аккаунтом
+и финансовые операции на VM этим прогоном не проверялись. `ready` ответил
+200; флаги остались `BUDGET_ENABLED=1`, `PHOTO_ENABLED=0`, фотораздел — 404.
+Файл `.env` не изменялся при этой выкладке.
+
 ## VM после выкладки `0.1.3`: 2026-10-06
 
 На VM запущен суперапп из приватного дерева `cap-superapp` с бюджетом `0.1.3`

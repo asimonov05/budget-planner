@@ -3,8 +3,6 @@ import { api, asList } from '../lib/api'
 import type { Account, ListResponse } from '../lib/types'
 import { Button, Card } from './ui'
 
-const skillPath = '/skills/bank-pdf-to-budget-csv/SKILL.md'
-
 export function makeAccountReference(accounts: Account[], exportedAt: string) {
   return {
     format: 'budget-planner-account-reference-v1',
@@ -32,6 +30,7 @@ function saveAccountReference(accounts: Account[]) {
 }
 
 export function BankPdfGuide() {
+  const skillPath = `${import.meta.env.BASE_URL}skills/bank-pdf-to-budget-csv/SKILL.md`
   const exportAccounts = useMutation({
     mutationFn: async () => {
       const response = await api<Account[] | ListResponse<Account>>('/accounts?include_archived=true')

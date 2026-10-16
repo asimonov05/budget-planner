@@ -49,6 +49,18 @@ describe('authentication UI', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a closed application behind a clear access state', async () => {
+    fetchMock.mockImplementation(async input => {
+      if (String(input) === '/api/v1/auth/me') return jsonResponse({ id: 1, username: 'owner' })
+      if (String(input) === '/api/v1/superapp/apps') return jsonResponse({ apps: [{ id: 'budget', available: false }] })
+      throw new Error(`Unexpected request: ${input}`)
+    })
+    render(<QueryClientProvider client={queryClient()}><MemoryRouter><App /></MemoryRouter></QueryClientProvider>)
+    expect(await screen.findByText('Бюджет сейчас недоступен')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Все приложения' })).toHaveAttribute('href', '/')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/forecast'))).toBe(false)
+  })
+
   it('submits credentials once, caches the returned user, and navigates after success', async () => {
     fetchMock.mockResolvedValue(jsonResponse({
       user: { id: 1, username: 'owner' }, csrf_token: 'csrf-value',

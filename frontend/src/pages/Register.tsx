@@ -9,7 +9,7 @@ import { api, jsonBody } from '../lib/api'
 import { AuthIntro } from '../components/AuthIntro'
 import { Button, Field, Input } from '../components/ui'
 import type { User } from '../lib/types'
-import { photoReturnPath } from '../lib/authRedirect'
+import { superappReturnPath } from '../lib/authRedirect'
 
 const schema = z.object({
   username: z.string().regex(/^[a-z][a-z0-9_.-]{2,79}$/, 'От 3 до 80 символов: латинские буквы, цифры, _, . и -; первый символ — буква'),
@@ -23,7 +23,7 @@ type Values = z.infer<typeof schema>
 export function Register({ currentUser }: { currentUser?: User | null }) {
   const navigate = useNavigate()
   const { search } = useLocation()
-  const destination = photoReturnPath(search)
+  const destination = superappReturnPath(search)
   const client = useQueryClient()
   useEffect(() => {
     if (currentUser && destination) window.location.replace(destination)
@@ -40,7 +40,7 @@ export function Register({ currentUser }: { currentUser?: User | null }) {
       else navigate('/')
     },
   })
-  if (currentUser) return destination ? <div className="fullscreen-state">Открываем фотораздел…</div> : <Navigate to="/" replace />
+  if (currentUser) return destination ? <div className="fullscreen-state">Открываем приложение…</div> : <Navigate to="/" replace />
   return <div className="login-page">
     <AuthIntro/>
     <section className="login-form-wrap">

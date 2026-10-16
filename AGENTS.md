@@ -82,7 +82,8 @@ resolved items: retain them with their verification evidence.
 # Release notes before every release
 
 Before creating a release tag or deploying a new version, prepare a release
-note draft in **Уведомления → Публикация → Release notes**. Use the exact
+note draft in **Администрирование супераппа → Публикации → Release notes**
+(`/admin/`). Use the exact
 release version, a short user-facing title, and concrete changes users can
 observe. Include relevant fixes, changed behaviour, and any action users need
 to take. Check every claim against the code and release checks; do not announce
@@ -92,6 +93,33 @@ Review and save the draft before the release. Once the deployed version is
 verified, publish that draft exactly once so active users receive an in-app
 notification and the note appears in the version history. Published notes are
 immutable; correct a draft before publication.
+
+# Keep the superapp admin in sync with the database
+
+Whenever a migration or model change adds, removes, or changes persisted
+tables, columns, types, defaults, constraints, or relationships, update the
+superapp admin in the same task. A database change is not complete until the
+admin supports the resulting schema; do not defer this to a follow-up task.
+
+- Ensure every application table and persisted field is represented correctly
+  in the admin catalogue, record details, and applicable create/edit forms.
+  Update labels, field types, required/nullable flags, keys and relationships;
+  remove obsolete fields and references after renames or deletions.
+- Review server-side masking for every new or changed field. Personal and
+  financial data, credentials, and embedded JSON must remain protected in API
+  responses, search, sorting, validation errors, and audit records. Hiding a
+  value only in the UI is insufficient; new fields must fail closed.
+- Review admin permissions, PostgreSQL grants/RLS, editability and domain
+  guards. Automatic discovery of a table must not automatically enable unsafe
+  writes. Keep system and coupled financial records read-only where changes
+  require a dedicated domain workflow, and explain that restriction in the UI.
+- Verify the affected admin list, detail and mutation flows after migration,
+  including masking, rejected operations and ordinary-user access denial.
+  Extend focused tests when the schema changes those contracts; record the
+  results and any untested scenarios in `docs/acceptance-status.md`.
+
+Metadata-driven discovery counts as synchronization only after verifying the
+new schema, masking and permissions; it is not a reason to skip admin review.
 
 # Database schema diagram
 

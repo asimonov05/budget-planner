@@ -92,6 +92,22 @@ describe('theme preference', () => {
     expect(resolveThemePreference('system', false)).toBe('light')
   })
 
+  it('keeps previous budget choices when the common keys are not set', () => {
+    expect(readThemePreference({ getItem: (key) => key === 'budget-planner-theme' ? 'dark' : null })).toBe('dark')
+    expect(readColorScheme({ getItem: (key) => key === 'budget-planner-color-scheme' ? 'plum' : null })).toBe('plum')
+    expect(readFontChoice({ getItem: (key) => key === 'budget-planner-font-v2' ? 'golos' : null })).toBe('golos')
+  })
+
+  it('updates the visible theme when another tab changes the common preference', () => {
+    const media = new MediaQueryMock(false)
+    vi.stubGlobal('matchMedia', vi.fn(() => media as unknown as MediaQueryList))
+    render(<ThemeProvider><Probe /></ThemeProvider>)
+    memoryStorage.setItem(THEME_STORAGE_KEY, 'dark')
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: THEME_STORAGE_KEY })))
+    expect(screen.getByTestId('preference')).toHaveTextContent('dark')
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+  })
+
   it('applies and persists theme, color scheme and font immediately', () => {
     const media = new MediaQueryMock(false)
     vi.stubGlobal('matchMedia', vi.fn(() => media as unknown as MediaQueryList))

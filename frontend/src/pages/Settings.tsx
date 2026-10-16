@@ -1,18 +1,16 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowLeftRight, CheckCircle2, CirclePlus, FolderCog, Monitor, Moon, Palette, Pencil, RotateCcw, Sun, Tags, Trash2, WalletCards } from 'lucide-react'
+import { Archive, ArrowLeftRight, CirclePlus, FolderCog, Pencil, RotateCcw, Tags, Trash2, WalletCards } from 'lucide-react'
 import { ApiError, api, asList, jsonBody, queryString } from '../lib/api'
 import { formatMoney, parseMoney, todayISO } from '../lib/format'
-import { colorSchemeAccents, useTheme, type ColorScheme, type FontChoice, type ThemePreference } from '../lib/theme'
+import { colorSchemeAccents, useTheme } from '../lib/theme'
 import type { Account, Category, ID, ListResponse, Tag } from '../lib/types'
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, Select, State } from '../components/ui'
 import { SalarySettings } from '../components/SalarySettings'
-import { PrivateUsers } from '../components/PrivateUsers'
 import { CurrencySelect } from '../components/CurrencySelect'
 import { CurrencySettings } from '../components/CurrencySettings'
-import type { User } from '../lib/types'
 
-type Tab = 'general'|'salary'|'appearance'|'accounts'|'currencies'|'categories'|'tags'|'users'
+type Tab = 'general'|'salary'|'accounts'|'currencies'|'categories'|'tags'
 interface Settings { currency: string; timezone: string; accounting_start_date?: string; locale?: string; salary_enabled: boolean; version: number }
 type DirectoryKind = 'accounts'|'categories'|'tags'
 type DirectoryItem = Account|Category|Tag
@@ -30,8 +28,7 @@ export function SettingsPage() {
     const requested = new URLSearchParams(window.location.search).get('tab')
     return requested === 'salary' || requested === 'accounts' || requested === 'currencies' ? requested : 'general'
   })
-  const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api('/auth/me') })
-  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, оформление, валюты и справочники."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='appearance'?'active':''} onClick={() => setTab('appearance')}><Palette/> Оформление</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='currencies'?'active':''} onClick={() => setTab('currencies')}><ArrowLeftRight/> Валюты</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button>{me.data?.is_admin && <button className={tab==='users'?'active':''} onClick={() => setTab('users')}><WalletCards/> Пользователи</button>}</aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'appearance' && <AppearanceSettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'currencies' && <CurrencySettings/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}{tab === 'users' && me.data?.is_admin && <PrivateUsers/>}</section></div></div>
+  return <div className="page"><PageHeader eyebrow="Система" title="Настройки" description="Параметры бюджета, зарплата, валюты и справочники."/><div className="settings-layout"><aside className="settings-nav"><button className={tab==='general'?'active':''} onClick={() => setTab('general')}><FolderCog/> Основные</button><button className={tab==='salary'?'active':''} onClick={() => setTab('salary')}><WalletCards/> Зарплата</button><button className={tab==='accounts'?'active':''} onClick={() => setTab('accounts')}><WalletCards/> Счета</button><button className={tab==='currencies'?'active':''} onClick={() => setTab('currencies')}><ArrowLeftRight/> Валюты</button><button className={tab==='categories'?'active':''} onClick={() => setTab('categories')}><Archive/> Категории</button><button className={tab==='tags'?'active':''} onClick={() => setTab('tags')}><Tags/> Теги</button></aside><section>{tab === 'general' && <GeneralSettings/>}{tab === 'salary' && <SalarySettings/>}{tab === 'accounts' && <Directory kind="accounts"/>}{tab === 'currencies' && <CurrencySettings/>}{tab === 'categories' && <Directory kind="categories"/>}{tab === 'tags' && <Directory kind="tags"/>}</section></div></div>
 }
 
 function GeneralSettings() {
@@ -59,110 +56,6 @@ function ResetBudget() {
     },
   })
   return <Card className="settings-card"><div className="section-head"><div><span className="eyebrow">Импорт</span><h2>Сбросить свой бюджет</h2></div></div><p>Удаляет ваши финансовые данные перед повторным импортом ZIP. Учётная запись и текущий вход сохраняются; остальные ваши сессии завершатся.</p><Button variant="secondary" onClick={() => { setDone(false); reset.reset(); setOpen(true) }}>Сбросить бюджет</Button>{done && <div className="notice notice--calm">Бюджет очищен. Теперь можно импортировать ZIP-архив проекта.</div>}{open && <Modal title="Сбросить свой бюджет" onClose={() => setOpen(false)}><div className="form-stack"><Field label="Текущий пароль"><Input type="password" value={password} onChange={(event) => setPassword(event.target.value)}/></Field><Field label="Напишите RESET"><Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)}/></Field>{reset.isError && <div className="form-alert" role="alert">{reset.error.message}</div>}<div className="form-actions"><Button variant="ghost" onClick={() => setOpen(false)}>Отмена</Button><Button disabled={!password || confirmation !== 'RESET' || reset.isPending} onClick={() => reset.mutate()}>{reset.isPending ? 'Сбрасываем…' : 'Подтвердить сброс'}</Button></div></div></Modal>}</Card>
-}
-
-const themeChoices: Array<{
-  value: ThemePreference
-  title: string
-  description: string
-  icon: typeof Sun
-}> = [
-  { value: 'light', title: 'Светлая', description: 'Светлый фон и спокойные контрастные поверхности.', icon: Sun },
-  { value: 'dark', title: 'Тёмная', description: 'Меньше яркости вечером и в слабо освещённой комнате.', icon: Moon },
-  { value: 'system', title: 'Системная', description: 'Следует за настройкой macOS, Windows или браузера.', icon: Monitor },
-]
-
-const colorSchemeChoices: Array<{
-  value: ColorScheme
-  title: string
-  description: string
-}> = [
-  { value: 'contour', title: 'Контур', description: 'Общий с фоторазделом синий акцент.' },
-  { value: 'forest', title: 'Лес', description: 'Спокойный зелёный акцент.' },
-  { value: 'ocean', title: 'Океан', description: 'Холодные синие и бирюзовые оттенки.' },
-  { value: 'plum', title: 'Слива', description: 'Мягкий фиолетовый акцент.' },
-  { value: 'amber', title: 'Янтарь', description: 'Тёплые золотистые оттенки.' },
-]
-
-const fontChoices: Array<{
-  value: FontChoice
-  title: string
-  description: string
-}> = [
-  { value: 'system', title: 'Системный', description: 'Шрифт устройства, общий для сервисов Контура.' },
-  { value: 'golos', title: 'Golos Text', description: 'Основной шрифт: ясные заголовки и удобные цифры.' },
-  { value: 'classic', title: 'Классический', description: 'Нейтральный текст и заголовки с засечками.' },
-  { value: 'humanist', title: 'Trebuchet MS', description: 'Мягкие формы и открытый рисунок букв.' },
-  { value: 'book', title: 'Georgia', description: 'Спокойный шрифт с засечками для всего интерфейса.' },
-]
-
-function AppearanceSettings() {
-  const { preference, resolvedTheme, colorScheme, fontChoice, setPreference, setColorScheme, setFontChoice } = useTheme()
-  const activeColorScheme = colorSchemeChoices.find((choice) => choice.value === colorScheme)!
-  return <Card className="settings-card appearance-card">
-    <div className="section-head"><div><span className="eyebrow">Интерфейс</span><h2>Тема оформления</h2></div></div>
-    <p className="appearance-intro">Выбор применяется сразу и сохраняется только в этом браузере.</p>
-    <div className="appearance-options" role="radiogroup" aria-label="Тема интерфейса">
-      {themeChoices.map(({ value, title, description, icon: Icon }) => {
-        const selected = preference === value
-        return <label
-          key={value}
-          className={`theme-choice ${selected ? 'is-selected' : ''}`}
-        >
-          <input
-            className="theme-choice-input"
-            type="radio"
-            name="interface-theme"
-            value={value}
-            checked={selected}
-            onChange={() => setPreference(value)}
-          />
-          <span className={`theme-preview theme-preview--${value}`} aria-hidden="true"><i/><i/><i/></span>
-          <span className="theme-choice-copy"><span><Icon/>{title}</span><small>{description}</small></span>
-          <span className="theme-choice-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
-        </label>
-      })}
-    </div>
-    <div className="appearance-subsection"><span className="eyebrow">Акцент</span><h3>Цветовая схема</h3><p>Меняет цвет действий и выделений. Фоны остаются общими для сервисов Контура.</p></div>
-    <div className="color-scheme-options" role="radiogroup" aria-label="Цветовая схема">
-      {colorSchemeChoices.map(({ value, title, description }) => {
-        const selected = colorScheme === value
-        return <label key={value} className={`color-scheme-choice color-scheme-choice--${value} ${selected ? 'is-selected' : ''}`}>
-          <input
-            className="theme-choice-input"
-            type="radio"
-            name="interface-color-scheme"
-            value={value}
-            checked={selected}
-            onChange={() => setColorScheme(value)}
-          />
-          <span className="color-scheme-swatch" aria-hidden="true"><i/><i/><i/></span>
-          <span className="color-scheme-copy"><strong>{title}</strong><small>{description}</small></span>
-          <span className="color-scheme-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
-        </label>
-      })}
-    </div>
-    <div className="appearance-subsection"><span className="eyebrow">Типографика</span><h3>Шрифт</h3><p>Выберите начертание, удобное для чтения бюджета.</p></div>
-    <div className="font-choice-options" role="radiogroup" aria-label="Шрифт интерфейса">
-      {fontChoices.map(({ value, title, description }) => {
-        const selected = fontChoice === value
-        return <label key={value} className={`font-choice font-choice--${value} ${selected ? 'is-selected' : ''}`}>
-          <input
-            className="theme-choice-input"
-            type="radio"
-            name="interface-font"
-            value={value}
-            checked={selected}
-            onChange={() => setFontChoice(value)}
-          />
-          <span className="font-choice-preview" aria-hidden="true"><strong>Бюджет на месяц</strong><small>Доходы, расходы и цели</small></span>
-          <span className="font-choice-copy"><strong>{title}</strong><small>{description}</small></span>
-          <span className="font-choice-check" aria-hidden="true">{selected && <CheckCircle2/>}</span>
-        </label>
-      })}
-    </div>
-    <div className="notice notice--calm appearance-status"><Palette/><div><strong>{activeColorScheme.title}: сейчас используется {resolvedTheme === 'dark' ? 'тёмная' : 'светлая'} палитра</strong><span>{preference === 'system' ? 'Яркость изменится автоматически вместе с системной темой.' : 'Автоматическое переключение яркости выключено.'}</span></div></div>
-  </Card>
 }
 
 function Directory({ kind }: { kind: DirectoryKind }) {

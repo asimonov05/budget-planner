@@ -84,6 +84,33 @@ class SessionToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AppAvailability(Base):
+    __tablename__ = "application_availability"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __table_args__ = (
+        CheckConstraint("id IN ('budget', 'photo')", name="ck_application_availability_id"),
+        CheckConstraint("version > 0", name="ck_application_availability_version"),
+    )
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
+
+class UserAppAccess(Base):
+    __tablename__ = "user_app_access"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    app_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __table_args__ = (
+        CheckConstraint("app_id IN ('budget', 'photo')", name="ck_user_app_access_app_id"),
+        CheckConstraint("version > 0", name="ck_user_app_access_version"),
+    )
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
+
 class ReleaseNote(Base):
     __tablename__ = "release_notes"
     id: Mapped[int] = mapped_column(primary_key=True)

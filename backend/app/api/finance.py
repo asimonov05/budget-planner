@@ -353,7 +353,7 @@ def suggest_transactions(
     if len(needle) < 2:
         raise HTTPException(status_code=422, detail="Введите хотя бы два символа")
     literal = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    candidates = db.scalars(
+    matching = (
         select(Transaction)
         .join(Account, Account.id == Transaction.account_id)
         .where(
@@ -363,9 +363,17 @@ def suggest_transactions(
             Transaction.goal_id.is_(None),
             Account.archived.is_(False),
         )
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
+    )
+    newest_first = (Transaction.date.desc(), Transaction.id.desc())
+    # A common prefix can have more than 100 recent matches. Keep exact titles
+    # in the candidate pool even when their last use was longer ago.
+    exact = db.scalars(
+        matching.where(Transaction.description.ilike(literal, escape="\\"))
+        .order_by(*newest_first)
         .limit(100)
     ).all()
+    recent = db.scalars(matching.order_by(*newest_first).limit(100)).all()
+    candidates = list({item.id: item for item in [*exact, *recent]}.values())
     candidates.sort(key=lambda item: (
         item.description.strip().casefold() != needle,
         not item.description.strip().casefold().startswith(needle),

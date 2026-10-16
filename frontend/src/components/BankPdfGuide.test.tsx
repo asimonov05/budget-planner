@@ -3,7 +3,22 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { BankPdfGuide, makeAccountReference } from './BankPdfGuide'
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+it.each([
+  { base: '/', path: '/skills/bank-pdf-to-budget-csv/SKILL.md' },
+  { base: '/budget/', path: '/budget/skills/bank-pdf-to-budget-csv/SKILL.md' },
+])('opens and downloads the skill from the application mounted at $base', ({ base, path }) => {
+  vi.stubEnv('BASE_URL', base)
+  const client = new QueryClient()
+  render(<QueryClientProvider client={client}><BankPdfGuide /></QueryClientProvider>)
+  const open = screen.getByRole('link', { name: 'Открыть скилл' })
+  const download = screen.getByRole('link', { name: 'Скачать SKILL.md' })
+  expect(open).toHaveAttribute('href', path)
+  expect(open).toHaveAttribute('target', '_blank')
+  expect(download).toHaveAttribute('href', path)
+  expect(download).toHaveAttribute('download', 'bank-pdf-to-budget-csv-SKILL.md')
+})
 
 it('exports only the account fields needed to map bank PDF rows to internal IDs', () => {
   const reference = makeAccountReference([{

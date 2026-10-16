@@ -124,9 +124,14 @@ describe('transaction resource integration', () => {
 
     await screen.findByText('Карта → Накопительный')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    fireEvent.change(screen.getByLabelText('Счёт'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Коф' } })
     fireEvent.change(screen.getByLabelText('Дата'), { target: { value: '2026-10-03' } })
     const suggestions = await screen.findByRole('region', { name: 'Похожие операции' })
+    const suggestionRequest = fetchMock.mock.calls.find(([url]) => String(url).startsWith('/api/v1/transactions/suggestions?'))
+    const suggestionParams = new URL(String(suggestionRequest?.[0]), 'http://testserver').searchParams
+    expect(suggestionParams.get('query')).toBe('Коф')
+    expect(suggestionParams.get('account_id')).toBe('3')
     expect(screen.getByLabelText('Сумма оплаты, RUB')).toHaveValue('')
     fireEvent.click(within(suggestions).getByRole('button', { name: /Кофе/ }))
 
@@ -144,6 +149,33 @@ describe('transaction resource integration', () => {
       description: 'Кофе', amount_minor: 25_000, date: '2026-10-03',
       account_id: 3, category_id: 4, tag_ids: [6],
     }))
+  })
+
+  it('suggests operations by title before an account is selected', async () => {
+    const original = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path.startsWith('/api/v1/transactions/suggestions?')) return jsonResponse({ items: [{
+        id: 43, description: 'Кофе', date: '2026-09-20', account_id: 5,
+        category_id: 4, amount_minor: 25_000, merchant_currency: null,
+        merchant_amount_minor: null, tag_ids: [],
+      }] })
+      return original(input, init)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(<QueryClientProvider client={client}><ResourcePage type="transaction" /></QueryClientProvider>)
+
+    await screen.findByText('Карта → Накопительный')
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить операцию' }))
+    expect(screen.getByLabelText('Счёт')).toHaveValue('')
+    fireEvent.change(screen.getByLabelText('Название'), { target: { value: 'Коф' } })
+    const suggestions = await screen.findByRole('region', { name: 'Похожие операции' })
+    const suggestionRequest = fetchMock.mock.calls.find(([url]) => String(url).startsWith('/api/v1/transactions/suggestions?'))
+    const suggestionParams = new URL(String(suggestionRequest?.[0]), 'http://testserver').searchParams
+    expect(suggestionParams.get('query')).toBe('Коф')
+    expect(suggestionParams.has('account_id')).toBe(false)
+    fireEvent.click(within(suggestions).getByRole('button', { name: /Кофе/ }))
+    expect(screen.getByLabelText('Счёт')).toHaveValue('5')
   })
 
   it('does not reuse a historical exchange rate from a similar purchase', async () => {

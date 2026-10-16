@@ -23,10 +23,12 @@ export const colorSchemeAccents: Record<ColorScheme, string> = {
   amber: '#9b6829',
 }
 
-export const THEME_STORAGE_KEY = 'budget-planner-theme'
-export const COLOR_SCHEME_STORAGE_KEY = 'budget-planner-color-scheme'
-// The previous key stored "classic" even when no font was explicitly chosen.
-export const FONT_STORAGE_KEY = 'budget-planner-font-v2'
+export const THEME_STORAGE_KEY = 'contour-theme'
+export const COLOR_SCHEME_STORAGE_KEY = 'contour-color-scheme'
+export const FONT_STORAGE_KEY = 'contour-font'
+const LEGACY_THEME_STORAGE_KEY = 'budget-planner-theme'
+const LEGACY_COLOR_SCHEME_STORAGE_KEY = 'budget-planner-color-scheme'
+const LEGACY_FONT_STORAGE_KEY = 'budget-planner-font-v2'
 
 const isThemePreference = (value: unknown): value is ThemePreference =>
   value === 'light' || value === 'dark' || value === 'system'
@@ -48,7 +50,7 @@ export function readThemePreference(
 ): ThemePreference {
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
-    const stored = source?.getItem(THEME_STORAGE_KEY)
+    const stored = source?.getItem(THEME_STORAGE_KEY) ?? source?.getItem(LEGACY_THEME_STORAGE_KEY)
     return isThemePreference(stored) ? stored : 'system'
   } catch {
     return 'system'
@@ -60,7 +62,7 @@ export function readColorScheme(
 ): ColorScheme {
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
-    const stored = source?.getItem(COLOR_SCHEME_STORAGE_KEY)
+    const stored = source?.getItem(COLOR_SCHEME_STORAGE_KEY) ?? source?.getItem(LEGACY_COLOR_SCHEME_STORAGE_KEY)
     return isColorScheme(stored) ? stored : 'contour'
   } catch {
     return 'contour'
@@ -72,7 +74,7 @@ export function readFontChoice(
 ): FontChoice {
   try {
     const source = storage ?? (typeof window !== 'undefined' ? window.localStorage : undefined)
-    const stored = source?.getItem(FONT_STORAGE_KEY)
+    const stored = source?.getItem(FONT_STORAGE_KEY) ?? source?.getItem(LEGACY_FONT_STORAGE_KEY)
     return isFontChoice(stored) ? stored : 'system'
   } catch {
     return 'system'
@@ -160,6 +162,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
     media.addListener(update)
     return () => media.removeListener(update)
+  }, [])
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || [THEME_STORAGE_KEY, COLOR_SCHEME_STORAGE_KEY, FONT_STORAGE_KEY].includes(event.key)) {
+        setPreferenceState(readThemePreference())
+        setColorSchemeState(readColorScheme())
+        setFontChoiceState(readFontChoice())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   useLayoutEffect(() => {

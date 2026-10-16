@@ -1,14 +1,14 @@
 /* Shared Contour visual language, aligned with photo-access.
    Keep this last in the CSS import order so legacy budget rules can use these tokens. */
 :root {
-  --contour-canvas: #f5f5f7;
-  --contour-surface: #ffffff;
-  --contour-soft: #f8f8fa;
-  --contour-text: #1d1d1f;
-  --contour-muted: #6e6e73;
-  --contour-border: #e5e5ea;
-  --contour-control-border: #c7c7cc;
-  --contour-danger: #c4262e;
+  --contour-canvas: var(--contour-global-canvas, #f5f5f7);
+  --contour-surface: var(--contour-global-surface, #ffffff);
+  --contour-soft: var(--contour-global-soft, #f8f8fa);
+  --contour-text: var(--contour-global-text, #1d1d1f);
+  --contour-muted: var(--contour-global-muted, #6e6e73);
+  --contour-border: var(--contour-global-border, #e5e5ea);
+  --contour-control-border: var(--contour-global-control-border, #c7c7cc);
+  --contour-danger: var(--contour-global-danger, #c4262e);
   --contour-danger-soft: #fff0f0;
   --contour-good: #247547;
   --contour-good-soft: #eaf8ee;
@@ -18,14 +18,14 @@
 }
 
 :root[data-theme='dark'] {
-  --contour-canvas: #111114;
-  --contour-surface: #1c1c1e;
-  --contour-soft: #2a2a2d;
-  --contour-text: #f5f5f7;
-  --contour-muted: #a1a1a6;
-  --contour-border: #38383d;
-  --contour-control-border: #595960;
-  --contour-danger: #ff7279;
+  --contour-canvas: var(--contour-global-canvas, #111114);
+  --contour-surface: var(--contour-global-surface, #1c1c1e);
+  --contour-soft: var(--contour-global-soft, #2a2a2d);
+  --contour-text: var(--contour-global-text, #f5f5f7);
+  --contour-muted: var(--contour-global-muted, #a1a1a6);
+  --contour-border: var(--contour-global-border, #38383d);
+  --contour-control-border: var(--contour-global-control-border, #595960);
+  --contour-danger: var(--contour-global-danger, #ff7279);
   --contour-danger-soft: #3a2024;
   --contour-good: #8bdfab;
   --contour-good-soft: #183d29;
@@ -73,12 +73,6 @@
   --sidebar-ink: var(--contour-text);
   --sidebar-muted: var(--contour-muted);
   --chart-grid: var(--contour-border);
-  --preview-light-canvas: #f5f5f7;
-  --preview-light-sidebar: #ffffff;
-  --preview-light-paper: #ffffff;
-  --preview-dark-canvas: #111114;
-  --preview-dark-sidebar: #1c1c1e;
-  --preview-dark-paper: #1c1c1e;
 }
 
 :root[data-color-scheme='contour'] {
@@ -91,17 +85,6 @@
   --chart-2: #c45e5e;
   --chart-3: #247547;
   --chart-4: #a47d42;
-}
-
-.color-scheme-choice--contour {
-  --swatch-1: #0066cc;
-  --swatch-2: #4d9fff;
-  --swatch-3: #e8f2ff;
-}
-
-.font-choice--system {
-  --preview-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --preview-display: var(--preview-body);
 }
 
 :root[data-theme='dark'][data-color-scheme='contour'] {
@@ -307,7 +290,6 @@ button, input, select, textarea { font: inherit; }
 .date-tile { background: var(--surface-subtle); }
 .notice { border-radius: 11px; }
 .badge { font-weight: 650; }
-.color-scheme-options { grid-template-columns: repeat(auto-fit, minmax(min(100%, 155px), 1fr)); }
 
 /* Dialogs and states */
 .modal-backdrop { background: rgba(20, 20, 28, .45); }

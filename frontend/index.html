@@ -4,19 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f7f7f2" />
+    <link rel="stylesheet" href="/contour.css" />
     <script>
       (() => {
         try {
-          const saved = localStorage.getItem('budget-planner-theme')
+          const saved = localStorage.getItem('contour-theme') ?? localStorage.getItem('budget-planner-theme')
           const preference = ['light', 'dark', 'system'].includes(saved) ? saved : 'system'
-          const savedColorScheme = localStorage.getItem('budget-planner-color-scheme')
-          const colorScheme = ['forest', 'ocean', 'plum', 'amber'].includes(savedColorScheme)
+          const savedColorScheme = localStorage.getItem('contour-color-scheme') ?? localStorage.getItem('budget-planner-color-scheme')
+          const colorScheme = ['contour', 'forest', 'ocean', 'plum', 'amber'].includes(savedColorScheme)
             ? savedColorScheme
-            : 'forest'
-          const savedFont = localStorage.getItem('budget-planner-font')
-          document.documentElement.dataset.font = ['classic', 'golos'].includes(savedFont)
+            : 'contour'
+          const savedFont = localStorage.getItem('contour-font') ?? localStorage.getItem('budget-planner-font-v2')
+          document.documentElement.dataset.font = ['system', 'classic', 'golos', 'humanist', 'book'].includes(savedFont)
             ? savedFont
-            : 'classic'
+            : 'system'
           const systemDark = typeof matchMedia === 'function'
             && matchMedia('(prefers-color-scheme: dark)').matches
           const theme = preference === 'system' ? (systemDark ? 'dark' : 'light') : preference
@@ -25,17 +26,17 @@
           document.documentElement.style.colorScheme = theme
           document.querySelector('meta[name="theme-color"]')?.setAttribute(
             'content',
-            theme === 'dark' ? '#151c18' : '#f5f4ee',
+            theme === 'dark' ? '#111114' : '#f5f5f7',
           )
         } catch {
           document.documentElement.dataset.theme = 'light'
-          document.documentElement.dataset.colorScheme = 'forest'
-          document.documentElement.dataset.font = 'classic'
+          document.documentElement.dataset.colorScheme = 'contour'
+          document.documentElement.dataset.font = 'system'
           document.documentElement.style.colorScheme = 'light'
         }
       })()
     </script>
-    <title>Контур — личный бюджет</title>
+    <title>cap space — личный бюджет</title>
   </head>
   <body>
     <div id="root"></div>

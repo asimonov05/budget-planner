@@ -76,6 +76,12 @@ def current_session(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
         )
+    db.info["user_id"] = user.id
+    if db.bind.dialect.name == "postgresql":
+        db.execute(
+            text("SELECT set_config('app.current_user_id', :user_id, true)"),
+            {"user_id": str(user.id)},
+        )
     request.state.auth_session = session
     return user, session
 
@@ -88,6 +94,16 @@ def get_db(auth: tuple[User, SessionToken] = Depends(current_session)):
 
 
 def require_user(auth: tuple[User, SessionToken] = Depends(current_session)) -> User:
+    return auth[0]
+
+
+def require_budget_access(
+    auth: tuple[User, SessionToken] = Depends(current_session),
+    db: Session = Depends(get_auth_db),
+) -> User:
+    from .application_access import require_application
+
+    require_application(db, "budget", auth[0].id)
     return auth[0]
 
 

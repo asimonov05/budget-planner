@@ -77,25 +77,15 @@ describe('notifications page', () => {
     expect(screen.getByRole('link', { name: 'К истории версий' })).toHaveAttribute('href', '/notifications?tab=releases')
   })
 
-  it('lets the owner save a release note draft', async () => {
-    fetchMock.mockImplementation(async (input, init) => {
+  it('links the owner to publication controls in the superapp', async () => {
+    fetchMock.mockImplementation(async (input) => {
       const path = String(input)
-      if (path === '/api/v1/notifications?limit=50&offset=0') return response({ items: [], total: 0, unread: 0 })
-      if (path === '/api/v1/users') return response({ items: [{ id: 1, username: 'owner', active: true }], total: 1 })
-      if (path === '/api/v1/release-notes/manage') return response([])
-      if (path === '/api/v1/release-notes' && init?.method === 'POST') return response({ id: 3, release_version: '1.4.0', title: 'Новые отчёты', summary: 'Удобнее смотреть бюджет', body: 'Добавили отчёты', status: 'draft', created_at: '2026-10-02T12:00:00Z', updated_at: '2026-10-02T12:00:00Z', published_at: null })
+      if (path === '/api/v1/auth/me') return response({ id: 1, username: 'owner', is_admin: true })
+      if (path.startsWith('/api/v1/notifications?')) return response({ items: [], total: 0, unread: 0 })
       throw new Error(`Unexpected request: ${path}`)
     })
     renderPage(true)
-    fireEvent.click(screen.getByRole('tab', { name: 'Публикация' }))
-    fireEvent.change(screen.getByLabelText('Версия'), { target: { value: '1.4.0' } })
-    fireEvent.change(screen.getAllByLabelText('Заголовок')[1], { target: { value: 'Новые отчёты' } })
-    fireEvent.change(screen.getByLabelText('Краткий анонс'), { target: { value: 'Удобнее смотреть бюджет' } })
-    fireEvent.change(screen.getByLabelText('Полное описание'), { target: { value: 'Добавили отчёты' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Предпросмотр страницы' }))
-    expect(screen.getByRole('region', { name: 'Предпросмотр страницы релиза' })).toHaveTextContent('Удобнее смотреть бюджет')
-    fireEvent.click(screen.getByRole('button', { name: 'Сохранить черновик' }))
-    await waitFor(() => expect(screen.getByText('Черновик сохранён')).toBeInTheDocument())
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/release-notes', expect.objectContaining({ method: 'POST', body: JSON.stringify({ release_version: '1.4.0', title: 'Новые отчёты', summary: 'Удобнее смотреть бюджет', body: 'Добавили отчёты' }) }))
+    expect(await screen.findByRole('link', { name: /Управление публикациями/ })).toHaveAttribute('href', '/admin/#publications')
+    expect(screen.queryByRole('tab', { name: 'Публикация' })).not.toBeInTheDocument()
   })
 })

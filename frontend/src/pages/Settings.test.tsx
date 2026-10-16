@@ -57,37 +57,11 @@ describe('settings directories', () => {
     expect(JSON.parse(String(request?.body))).toEqual({ name: 'Основная карта', type: 'cash', version: 3 })
   })
 
-  it('switches between brightness modes, color schemes and fonts', () => {
+  it('keeps appearance controls out of budget settings', () => {
     renderSettings()
-    fireEvent.click(screen.getByRole('button', { name: /Оформление/ }))
-
-    expect(screen.getByRole('radio', { name: /Светлая/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Тёмная/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Системная/ })).toBeChecked()
-
-    fireEvent.click(screen.getByRole('radio', { name: /Тёмная/ }))
-    expect(screen.getByRole('radio', { name: /Тёмная/ })).toBeChecked()
-    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
-
-    expect(screen.getByRole('radio', { name: /^Контур / })).toBeChecked()
-    expect(screen.getByRole('radio', { name: /Лес/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Океан/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Слива/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Янтарь/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('radio', { name: /Слива/ }))
-    expect(screen.getByRole('radio', { name: /Слива/ })).toBeChecked()
-    expect(document.documentElement).toHaveAttribute('data-color-scheme', 'plum')
-
-    expect(screen.getByRole('radio', { name: /Системный/ })).toBeChecked()
-    expect(screen.getByRole('radio', { name: /Golos Text/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Trebuchet MS/ })).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /Georgia/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('radio', { name: /Georgia/ }))
-    expect(screen.getByRole('radio', { name: /Georgia/ })).toBeChecked()
-    expect(document.documentElement).toHaveAttribute('data-font', 'book')
-    fireEvent.click(screen.getByRole('radio', { name: /Классический/ }))
-    expect(screen.getByRole('radio', { name: /Классический/ })).toBeChecked()
-    expect(document.documentElement).toHaveAttribute('data-font', 'classic')
+    expect(screen.getByRole('button', { name: /Основные/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Оформление/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Тёмная/ })).not.toBeInTheDocument()
   })
 
   it('marks an expense category for monthly estimates', async () => {
@@ -171,25 +145,15 @@ describe('settings directories', () => {
     expect(JSON.parse(String(request?.body))).toEqual(expect.objectContaining({ name: 'Работодатель А', gross_minor: 10_000_000, advance_share_bps: 4_000, account_id: 1 }))
   })
 
-  it('creates a private budget for a new user', async () => {
-    fetchMock.mockImplementation(async (input, init) => {
+  it('keeps global user administration outside budget settings', async () => {
+    fetchMock.mockImplementation(async (input) => {
       const path = String(input)
-      if (path === '/api/v1/auth/me') return jsonResponse({ id: 1, username: 'owner', is_admin: true })
-      if (path === '/api/v1/users' && init?.method === 'POST') return jsonResponse({ id: 2, username: 'alice', active: true, is_admin: false }, 201)
-      if (path === '/api/v1/users') return jsonResponse({ items: [{ id: 1, username: 'owner', active: true, is_admin: true }], total: 1 })
       if (path === '/api/v1/settings') return jsonResponse({ currency: 'RUB', timezone: 'Europe/Moscow', accounting_start_date: '2026-01-01', version: 1 })
       throw new Error(`Unexpected request: ${path}`)
     })
     renderSettings()
-    fireEvent.click(await screen.findByRole('button', { name: 'Пользователи' }))
-    await screen.findByText(/Владелец · Доступ открыт/)
-    fireEvent.click(screen.getByRole('button', { name: 'Добавить' }))
-    fireEvent.change(screen.getByLabelText('Логин'), { target: { value: 'alice' } })
-    fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'alice strong passphrase' } })
-    fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'alice strong passphrase' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Создать пользователя' }))
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, request]) => url === '/api/v1/users' && request?.method === 'POST')).toBe(true))
-    const [, request] = fetchMock.mock.calls.find(([url, options]) => url === '/api/v1/users' && options?.method === 'POST')!
-    expect(JSON.parse(String(request?.body))).toEqual({ username: 'alice', password: 'alice strong passphrase' })
+    await screen.findByText('Основные параметры')
+    expect(screen.queryByRole('button', { name: 'Пользователи' })).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/users'))).toBe(false)
   })
 })

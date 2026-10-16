@@ -29,9 +29,20 @@ async function loadCurrentUser(): Promise<User | null> {
 function Protected() {
   const location = useLocation()
   const me = useQuery<User | null>({ queryKey: ['me'], queryFn: loadCurrentUser, retry: false })
+  const access = useQuery<{ apps: Array<{ id: string; available: boolean }> }>({
+    queryKey: ['superapp-apps', me.data?.id],
+    queryFn: () => api('/superapp/apps'),
+    enabled: Boolean(me.data),
+    retry: false,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  })
   if (me.isLoading) return <div className="fullscreen-state"><State kind="loading" title="Открываем бюджет" /></div>
   if (me.isError) return <div className="fullscreen-state"><State kind="error" title="Сервер недоступен">Проверьте, что приложение запущено, и обновите страницу.</State></div>
   if (!me.data) return <Navigate to="/login" state={{ from: location }} replace />
+  if (access.isLoading) return <div className="fullscreen-state"><State kind="loading" title="Проверяем доступ к бюджету" /></div>
+  if (access.isError) return <div className="fullscreen-state"><State kind="error" title="Не удалось проверить доступ" action={<button className="button button--secondary" onClick={() => access.refetch()}>Повторить</button>}>Попробуйте ещё раз или <a href="/">вернитесь ко всем приложениям</a>.</State></div>
+  if (!access.data?.apps.some(app => app.id === 'budget' && app.available)) return <div className="fullscreen-state"><State title="Бюджет сейчас недоступен" action={<a className="button button--primary" href="/">Все приложения</a>}>Администратор закрыл доступ к приложению. Ваши данные сохранены.</State></div>
   return <Layout />
 }
 

@@ -1,10 +1,10 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, Bell, Check, CheckCheck, Eye, FileText, Send, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bell, Check, CheckCheck, FileText, Sparkles } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api, jsonBody } from '../lib/api'
-import type { ListResponse, User } from '../lib/types'
-import { Button, Card, Field, Input, PageHeader, Select, State } from '../components/ui'
+import { api } from '../lib/api'
+import type { User } from '../lib/types'
+import { Button, Card, PageHeader, State } from '../components/ui'
 import './notifications.css'
 
 interface Notification {
@@ -29,10 +29,7 @@ interface ReleaseNote {
   updated_at: string
   published_at: string | null
 }
-interface PrivateUser { id: number; username: string; active: boolean }
-type Tab = 'inbox' | 'releases' | 'manage'
-type Draft = { release_version: string; title: string; summary: string; body: string }
-const emptyDraft: Draft = { release_version: '', title: '', summary: '', body: '' }
+type Tab = 'inbox' | 'releases'
 
 function timeLabel(value: string) {
   return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
@@ -90,7 +87,7 @@ function ReleaseArticle({ body }: { body: string }) {
 export function NotificationsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const tab: Tab = requestedTab === 'releases' || requestedTab === 'manage' ? requestedTab : 'inbox'
+  const tab: Tab = requestedTab === 'releases' ? requestedTab : 'inbox'
   const setTab = (next: Tab) => setSearchParams(next === 'inbox' ? {} : { tab: next })
   const me = useQuery<User>({ queryKey: ['me'], queryFn: () => api('/auth/me') })
   return <div className="page notifications-page">
@@ -98,11 +95,10 @@ export function NotificationsPage() {
     <div className="notification-tabs" role="tablist" aria-label="Разделы уведомлений">
       <button role="tab" aria-selected={tab === 'inbox'} className={tab === 'inbox' ? 'active' : ''} onClick={() => setTab('inbox')}><Bell aria-hidden="true" /> Входящие</button>
       <button role="tab" aria-selected={tab === 'releases'} className={tab === 'releases' ? 'active' : ''} onClick={() => setTab('releases')}><FileText aria-hidden="true" /> История версий</button>
-      {me.data?.is_admin && <button role="tab" aria-selected={tab === 'manage'} className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}><Send aria-hidden="true" /> Публикация</button>}
     </div>
     {tab === 'inbox' && <InboxView />}
     {tab === 'releases' && <ReleaseHistory />}
-    {tab === 'manage' && me.data?.is_admin && <ManageView />}
+    {me.data?.is_admin && <a className="notification-detail-link" href="/admin/#publications">Управление публикациями в cap space <ArrowRight aria-hidden="true" /></a>}
   </div>
 }
 
@@ -192,91 +188,5 @@ export function ReleaseNotePage() {
       </header>
       <ReleaseArticle body={note.data.body} />
     </article>}
-  </div>
-}
-
-function ManageView() {
-  const client = useQueryClient()
-  const users = useQuery<ListResponse<PrivateUser>>({ queryKey: ['private-users'], queryFn: () => api('/users') })
-  const notes = useQuery<ReleaseNote[]>({ queryKey: ['release-notes', 'manage'], queryFn: () => api('/release-notes/manage') })
-  const [recipient, setRecipient] = useState('all')
-  const [messageTitle, setMessageTitle] = useState('')
-  const [messageBody, setMessageBody] = useState('')
-  const [messageResult, setMessageResult] = useState('')
-  const [draft, setDraft] = useState<Draft>(emptyDraft)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [releaseResult, setReleaseResult] = useState('')
-  const [preview, setPreview] = useState(false)
-  const send = useMutation({
-    mutationFn: () => api<{ delivered: number }>('/notifications/send', {
-      method: 'POST', body: jsonBody({
-        title: messageTitle, body: messageBody,
-        recipient_user_id: recipient === 'all' ? null : Number(recipient),
-      }),
-    }),
-    onSuccess: async (result) => {
-      setMessageTitle(''); setMessageBody('')
-      setMessageResult(`Доставлено: ${result.delivered}`)
-      await invalidateInbox(client)
-    },
-  })
-  const save = useMutation({
-    mutationFn: () => api<ReleaseNote>(editingId === null ? '/release-notes' : `/release-notes/${editingId}`, {
-      method: editingId === null ? 'POST' : 'PATCH', body: jsonBody(draft),
-    }),
-    onSuccess: async () => {
-      setDraft(emptyDraft); setEditingId(null); setPreview(false); setReleaseResult('Черновик сохранён')
-      await client.invalidateQueries({ queryKey: ['release-notes', 'manage'] })
-    },
-  })
-  const publish = useMutation({
-    mutationFn: (id: number) => api<{ delivered: number }>(`/release-notes/${id}/publish`, { method: 'POST' }),
-    onSuccess: async (result) => {
-      setReleaseResult(`Заметка опубликована. Уведомлений доставлено: ${result.delivered}`)
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['release-notes'] }),
-        client.invalidateQueries({ queryKey: ['notifications'] }),
-        client.invalidateQueries({ queryKey: ['notifications', 'release-preview'] }),
-      ])
-    },
-  })
-  const submitMessage = (event: FormEvent) => { event.preventDefault(); setMessageResult(''); send.mutate() }
-  const submitDraft = (event: FormEvent) => { event.preventDefault(); setReleaseResult(''); save.mutate() }
-  return <div className="notification-management">
-    <Card className="notification-management__card"><div className="section-head"><div><span className="eyebrow">Владелец</span><h2>Отправить сообщение</h2></div></div>
-      <form className="form-stack" onSubmit={submitMessage}>
-        <Field label="Получатели"><Select value={recipient} onChange={(event) => setRecipient(event.target.value)}><option value="all">Все активные пользователи</option>{users.data?.items.filter((user) => user.active).map((user) => <option value={user.id} key={user.id}>{user.username}</option>)}</Select></Field>
-        <Field label="Заголовок"><Input maxLength={160} required value={messageTitle} onChange={(event) => setMessageTitle(event.target.value)} /></Field>
-        <Field label="Сообщение"><textarea className="input" rows={5} maxLength={20000} required value={messageBody} onChange={(event) => setMessageBody(event.target.value)} /></Field>
-        {users.isError && <div className="form-alert" role="alert">{users.error.message}</div>}
-        {send.isError && <div className="form-alert" role="alert">{send.error.message}</div>}
-        {messageResult && <div className="notice notice--calm" role="status">{messageResult}</div>}
-        <div className="form-actions"><Button type="submit" disabled={send.isPending || !messageTitle.trim() || !messageBody.trim() || users.isLoading}>Отправить</Button></div>
-      </form>
-    </Card>
-    <Card className="notification-management__card"><div className="section-head"><div><span className="eyebrow">Перед релизом</span><h2>Release notes</h2></div></div>
-      <p className="notification-editor-intro">Краткий анонс попадёт в уведомление, а полное описание откроется на отдельной странице. Сохраните и проверьте черновик до публикации.</p>
-      <form className="form-stack" onSubmit={submitDraft}>
-        <Field label="Версия"><Input maxLength={40} pattern="[0-9A-Za-z][0-9A-Za-z._-]*" required value={draft.release_version} onChange={(event) => setDraft({ ...draft, release_version: event.target.value })} placeholder="Например, 1.4.0" /></Field>
-        <Field label="Заголовок"><Input maxLength={160} required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></Field>
-        <Field label="Краткий анонс" hint="Появится в уведомлении и истории версий. Одно-два предложения."><textarea className="input" rows={3} maxLength={300} required value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} placeholder="Главное изменение этой версии" /></Field>
-        <Field label="Полное описание" hint="Для заголовка начните строку с #, для списка — с дефиса. Пустая строка разделяет абзацы."><textarea className="input" rows={10} maxLength={20000} required value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} placeholder={'# Что нового\n- Новая возможность\n- Исправленная ошибка'} /></Field>
-        <div className="notification-preview-actions"><Button type="button" variant="secondary" onClick={() => setPreview(!preview)}><Eye aria-hidden="true" /> {preview ? 'Скрыть предпросмотр' : 'Предпросмотр страницы'}</Button></div>
-        {preview && <section className="release-note-preview" aria-label="Предпросмотр страницы релиза"><span className="release-note-version">Версия {draft.release_version || '—'}</span><h3>{draft.title || 'Заголовок релиза'}</h3><p className="release-note-preview__summary">{draft.summary || 'Краткий анонс'}</p><ReleaseArticle body={draft.body || 'Полное описание версии'} /></section>}
-        {save.isError && <div className="form-alert" role="alert">{save.error.message}</div>}
-        {publish.isError && <div className="form-alert" role="alert">{publish.error.message}</div>}
-        {releaseResult && <div className="notice notice--calm" role="status">{releaseResult}</div>}
-        <div className="form-actions"><Button type="submit" disabled={save.isPending || !draft.release_version.trim() || !draft.title.trim() || !draft.summary.trim() || !draft.body.trim()}>{editingId === null ? 'Сохранить черновик' : 'Сохранить изменения'}</Button>{editingId !== null && <Button type="button" variant="ghost" onClick={() => { setEditingId(null); setDraft(emptyDraft); setPreview(false) }}>Отмена</Button>}</div>
-      </form>
-      <div className="notification-drafts">
-        <h3>Заметки о версиях</h3>
-        {notes.isLoading && <State kind="loading" title="Загружаем заметки" />}
-        {notes.isError && <div className="form-alert" role="alert">{notes.error.message}</div>}
-        {notes.data?.map((note) => <div className="notification-draft" key={note.id}>
-          <div><strong>{note.release_version} · {note.title}</strong><small>{note.status === 'draft' ? 'Черновик' : `Опубликовано ${dateLabel(note.published_at ?? note.created_at)}`}</small></div>
-          <div className="notification-draft__actions">{note.status === 'draft' ? <><Button variant="ghost" onClick={() => { setEditingId(note.id); setDraft({ release_version: note.release_version, title: note.title, summary: note.summary, body: note.body }); setPreview(false); setReleaseResult('') }}>Изменить</Button><Button variant="secondary" disabled={publish.isPending} onClick={() => { if (window.confirm(`Опубликовать заметку версии ${note.release_version} и уведомить пользователей?`)) publish.mutate(note.id) }}>Опубликовать</Button></> : <Link className="notification-detail-link" to={`/release-notes/${note.id}`}>Открыть <ArrowRight aria-hidden="true" /></Link>}</div>
-        </div>)}
-      </div>
-    </Card>
   </div>
 }

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
-from ..db import get_auth_db
+from ..db import get_auth_db, reserve_write_slot
 from ..models import SessionToken, User
 from ..schemas import PrivateUserCreate, PrivateUserOut, PrivateUserPassword, PrivateUserStatus
 from ..security import hash_password, require_csrf_unlocked, require_user
@@ -32,7 +32,24 @@ def require_admin(
 @router.get("")
 def list_users(_=Depends(require_admin), db: Session = Depends(get_auth_db)) -> dict:
     users = db.scalars(select(User).order_by(User.id)).all()
-    return {"items": [PrivateUserOut.model_validate(user) for user in users], "total": len(users)}
+    return {"items": [masked_user(user) for user in users], "total": len(users)}
+
+
+def masked_user(user: User) -> dict:
+    value = PrivateUserOut.model_validate(user).model_dump()
+    value["username"] = f"Пользователь #{user.id}"
+    return value
+
+
+def lock_user_command(db: Session, actor_id: int) -> None:
+    if db.bind.dialect.name == "postgresql":
+        # Shared with admin_data.write_session for role/status changes.
+        db.execute(text("SELECT pg_advisory_xact_lock(17021987, 1)"))
+    else:
+        reserve_write_slot(db)
+    actor = db.scalar(select(User).where(User.id == actor_id).execution_options(populate_existing=True))
+    if not actor or not actor.active or not actor.is_admin:
+        raise HTTPException(403, "Доступ администратора отозван")
 
 
 @router.post("", response_model=PrivateUserOut, status_code=201)
@@ -41,7 +58,8 @@ def create_user(
     _admin=Depends(require_admin),
     _csrf=Depends(require_csrf_unlocked),
     db: Session = Depends(get_auth_db),
-) -> User:
+) -> dict:
+    lock_user_command(db, _admin.id)
     if db.scalar(select(User.id).where(User.username == body.username)):
         raise HTTPException(status_code=409, detail="Username already exists")
     user = User(
@@ -53,7 +71,7 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    return masked_user(user)
 
 
 @router.patch("/{user_id}", response_model=PrivateUserOut)
@@ -63,7 +81,8 @@ def set_user_status(
     admin: User = Depends(require_admin),
     _csrf=Depends(require_csrf_unlocked),
     db: Session = Depends(get_auth_db),
-) -> User:
+) -> dict:
+    lock_user_command(db, admin.id)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -74,7 +93,7 @@ def set_user_status(
         db.execute(delete(SessionToken).where(SessionToken.user_id == user.id))
     db.commit()
     db.refresh(user)
-    return user
+    return masked_user(user)
 
 
 @router.post("/{user_id}/reset-password")
@@ -85,6 +104,7 @@ def reset_user_password(
     _csrf=Depends(require_csrf_unlocked),
     db: Session = Depends(get_auth_db),
 ) -> dict:
+    lock_user_command(db, _admin.id)
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
