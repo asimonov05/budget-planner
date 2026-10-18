@@ -7,6 +7,7 @@ from app.main import app
 
 
 IDENTITY = "/api/v1/superapp/apps/photo/identity"
+ADMIN_IDENTITY = "/api/v1/superapp/apps/photo/admin/identity"
 ORIGIN = {"Origin": "http://testserver"}
 
 
@@ -91,3 +92,27 @@ def test_photo_post_identity_rejects_revoked_session(client, auth):
     assert client.post("/api/v1/auth/logout", headers=auth).status_code == 200
     client.cookies.set("budget_session", session)
     assert client.post(IDENTITY, headers={**ORIGIN, **auth}).status_code == 401
+
+
+def test_photo_admin_identity_is_independent_of_application_access(client, auth):
+    closed = client.patch(
+        "/api/v1/superapp/admin/apps/photo",
+        headers=auth,
+        json={"enabled": False, "version": 0},
+    )
+    assert closed.status_code == 200
+    assert client.get(IDENTITY).status_code == 403
+    response = client.post(ADMIN_IDENTITY, headers={**ORIGIN, **auth})
+    assert response.status_code == 200
+    assert response.json() == {"id": 1, "username": "owner", "is_admin": True}
+
+    with TestClient(app) as reader:
+        registration = reader.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "quota_reader",
+                "password": "a secure separate test password",
+            },
+        )
+        assert registration.status_code == 201
+        assert reader.get(ADMIN_IDENTITY).status_code == 403

@@ -1,5 +1,7 @@
 """Shared Photo identity boundary, including session-bound CSRF verification."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -20,6 +22,10 @@ class PhotoIdentity(BaseModel):
     username: str
 
 
+class PhotoAdminIdentity(PhotoIdentity):
+    is_admin: Literal[True] = True
+
+
 def provide_photo_identity(
     user: User = Depends(require_csrf_unlocked),
     db: Session = Depends(get_auth_db),
@@ -37,6 +43,23 @@ def photo_identity(identity: PhotoIdentity = Depends(provide_photo_identity)) ->
     session and CSRF header. Its upstream Origin must match the configured
     identity URL, just like any other request to the central identity API.
     """
+    return identity
+
+
+def provide_photo_admin_identity(
+    user: User = Depends(require_csrf_unlocked),
+) -> PhotoAdminIdentity:
+    # Administration stays reachable even when Photo itself is disabled.
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return PhotoAdminIdentity(id=user.id, username=user.username)
+
+
+@router.get("/admin/identity", response_model=PhotoAdminIdentity)
+@router.post("/admin/identity", response_model=PhotoAdminIdentity)
+def photo_admin_identity(
+    identity: PhotoAdminIdentity = Depends(provide_photo_admin_identity),
+) -> PhotoAdminIdentity:
     return identity
 
 

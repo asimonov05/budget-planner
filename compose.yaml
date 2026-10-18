@@ -22,9 +22,7 @@ services:
 
   migrate:
     image: "budget-planner:${APP_IMAGE_TAG:-local}"
-    build:
-      context: .
-      dockerfile: Dockerfile
+    pull_policy: never
     command: ["python", "-m", "app.migrate_job"]
     restart: "no"
     depends_on:

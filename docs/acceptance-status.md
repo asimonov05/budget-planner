@@ -1,5 +1,105 @@
 # Статус приемки
 
+## Релиз cap space 0.1.6 — 18 октября 2026
+
+Проверен isolated snapshot dirty working tree: Budget base
+`08142924ce9185801545a4b399c0bab223920c7f`, Photo base
+`b616eef69f8ccca8e597ab7461602f927d772207`, cap base
+`d43a595a9c3921e935229636497af4bc9fd35a74`. Предшествующие изменения
+включены. Budget 0.1.6 / schema 0013; Photo 0.2.0 / schema 0006.
+Среда: Python tests 3.13.13, Photo container 3.13.16, PostgreSQL 17.11,
+Node 26.4.0, Chrome 150.0.7871.182. Данные только синтетические.
+
+| Проверка и команда в снимке | Результат |
+| --- | --- |
+| `python -m pytest backend/tests/test_photo_identity.py` | 9 passed |
+| `make lint test build` | Ruff/TypeScript/build PASS; 176 pytest / 90 Vitest, 0 failed/skipped |
+| `make build` после изменения Compose | PASS; migration job использует уже собранный app image |
+| `make -o lint -o test -o build acceptance SMOKE_PROJECT=cap-budget-release016-20261018 SMOKE_PORT=38197` | 5 Playwright passed, 0 skipped; отдельные БД/owner/unique image tag; Chrome + `/private/tmp/cap-playwright` |
+| `SUPERAPP_TEST_STATE=<private fixture> PLAYWRIGHT_CHANNEL=chrome node superapp/admin-live-smoke.mjs` | PASS на `cap-admin-check-eye-016-20261018`, порт 38196; 29 таблиц, masking/CRUD, photo quota edit/reset и non-admin denial |
+| `admin-reveal-live-smoke.mjs` и `SUPERAPP_DISPOSABLE=1 ... admin-reveal-postgres-smoke.py` | PASS: real PostgreSQL RLS/audit/SELECT-only, CSRF, per-field reveal, no implicit PATCH |
+| Photo `make check TEST_IMAGE=cap-photo-test:016-rc1 TEST_PROJECT=cap-photo-tests-016-20261018` | Ruff/format/mypy; 84 PostgreSQL / 43 frontend; build PASS |
+| `api-smoke.py`, `sharing-smoke.py` с disposable loopback fixtures | 124 / 188 checks |
+| `browser-smoke.mjs`, `sharing-browser-smoke.mjs` | 92 / 70 checks: viewer, original download, arrows/keyboard, direct guest photo URL, revoke and 360px layout |
+| `home-browser-smoke.mjs`, `admin-browser-smoke.mjs`, `storage-meter-browser-smoke.mjs` | PASS с mock API; границы отделены от живого стенда выше |
+
+Frontend tests/build повторены после CSS. Исправлены concurrent image export,
+селекторы нового меню/фоновых полей и overflow длинного автора. Скриншоты
+viewer, mobile public album и mobile admin quota просмотрены. Схема Budget
+не менялась; Photo миграции/права проверены на настоящем PostgreSQL. Операции
+production и резервные копии описываются отдельно в закрытом журнале cap.
+
+## Устойчивый переход cap space → Photo: 2026-10-18
+
+Gateway-лог подтвердил кратковременную ошибку после пересоздания upstream:
+`/photo-api/auth/me` вернул HTML входа вместо JSON, а Nginx зафиксировал
+`photo-app could not be resolved` и один `502`. DNS TTL сокращён до 1 секунды,
+Photo frontend автоматически повторяет только transient auth-ошибки; `401` и
+персональный `403` сохраняют прежнее поведение. После обнаружения повторного
+использования Chrome закешированного HTML identity-fetch переведён на
+`cache: no-store`, явный JSON Accept и валидацию ответа. Локально пересобран только
+`photo-frontend`, затем gateway пересоздан после готовности сервисов.
+
+| Проверка | Точная команда | Результат и границы |
+| --- | --- | --- |
+| Photo frontend | `npm test -- --run`; `npm run build` из `photo-access/frontend/` | [x] 43 Vitest passed, production build прошёл; новый тест восстанавливается после HTML-ответа gateway на втором identity-запросе. |
+| Gateway config/runtime | `docker compose config --quiet`; live `nginx -t`; пять GET `/photo-api/auth/me`; GET `/photo-api/health/ready` | [x] Compose/Nginx валидны; пять ответов `401 application/json` по 36 байт для гостя, ready 200; после финального recreate нет DNS/502 ошибок. |
+| Полные budget gates | `make lint test build` из `budget-planner/` | [x] Ruff/TypeScript, 176 pytest, 90 Vitest, production build и Compose config прошли. |
+
+Пользовательские данные и PostgreSQL не менялись. Production не обновлялся.
+
+## Иконка Photo на главной cap space: 2026-10-18
+
+SVG внутри карточки «Фото» заменён на знак из шапки Photo-access: совпадают
+координаты двух карточек, радиусы, прозрачный задний слой, блик и линия снимка.
+Размер контейнера карточки, ссылка и доступность не менялись. Budget HEAD
+`d43a595a9c3921e935229636497af4bc9fd35a74`, рабочее дерево dirty; схема,
+API и данные не менялись. Среда: Python 3.13.13, Node.js 26.4.0.
+
+| Проверка | Точная команда | Результат и границы |
+| --- | --- | --- |
+| Главная в браузере | `PLAYWRIGHT_CHANNEL=chrome node superapp/home-browser-smoke.mjs` | [x] 8/8 mocked-browser проверок прошли, 0 page errors. Дополнительно проверены координаты элементов нового SVG; `/tmp/cap-home-photo-icon.png` визуально подтверждает совпадающий знак в неизменённой карточке. Существующая проверка 320 px прошла без горизонтального overflow. |
+| Полные gates владельца UI | `make lint test build` из `budget-planner/` | [x] Ruff и TypeScript прошли; 176 pytest и 90 Vitest passed, 0 failed/skipped; production Vite build и `docker compose config --quiet` прошли. Осталось известное предупреждение Vite о chunk >500 kB. |
+| Whitespace | `git diff --check` | [x] Прошёл. |
+
+Live Compose и deploy не запускались: изменение ограничено статическим SVG,
+а фактический браузерный рендер проверен локальным HTTP fixture.
+
+## Квоты Photo и публичная ссылка при закрытом приложении: 2026-10-18
+
+Для каждого аккаунта Photo добавлен эффективный лимит 5 ГиБ по умолчанию и
+отдельная вкладка `/admin/` для просмотра использования, установки и сброса
+индивидуального лимита. В лимит входят оригиналы владельца альбома; WebP-превью
+не входят. Проверка загрузки и изменение правила используют одну блокировку
+аккаунта. Публичные маршруты остаются token-only и не вызывают identity
+посетителя, в том числе при его персонально закрытом приложении.
+
+Budget HEAD `d43a595a9c3921e935229636497af4bc9fd35a74`; рабочее дерево dirty
+(существовавшие изменения сохранены, изменения этой итерации не закоммичены).
+Среда: macOS arm64, Python 3.13.13, Node.js 26.4.0, Docker client 29.4.3;
+контейнер budget использует Python 3.13.15, disposable базы — PostgreSQL 17.
+Схема бюджета не менялась; новая `storage_quotas` и миграция
+`0005_storage_quotas` относятся к отдельной БД Photo, поэтому
+`docs/database-schema.excalidraw` бюджета не изменялся.
+
+| Проверка | Точная команда | Наблюдаемый результат и границы |
+| --- | --- | --- |
+| Budget gates | `make test lint` из `budget-planner/` | [x] 176 pytest passed, 0 failed/skipped; 90 Vitest passed в 19 файлах; Ruff и TypeScript прошли. SQLite fixture бюджета; PostgreSQL ниже проверен отдельным стендом. |
+| Budget build | `make build` из `budget-planner/` | [x] production Vite build и `docker compose config --quiet` прошли. Сохранилось известное предупреждение о JS chunk >500 kB. |
+| Budget disposable runtime | `APP_PORT=18089 APP_IMAGE_TAG=quota-check-20261018 docker compose -p cap-quota-budget-20261018 up -d --build --wait`; затем синтетический `init-admin` и `BASE_URL=http://127.0.0.1:18089 E2E_USERNAME=<synthetic> E2E_PASSWORD=<env-only> PLAYWRIGHT_CHANNEL=chrome npm --prefix e2e test` | [x] Новый volume и migration job, app healthy; 5/5 Playwright passed, 0 skipped/failed. После проверки `docker compose ... down --volumes` удалил только disposable project. |
+| Photo PostgreSQL 17 | `make test` из `photo-access/` | [x] 84 pytest passed, 0 failed/skipped. Реальные миграции `0005`/`0006`, FORCE RLS, собственный агрегат без произвольного ID, дефолт/изменение/сброс/409, отказ 507, idempotency, параллельная блокировка, квота владельца при загрузке редактором и public-link с cookie заблокированного посетителя. Test Compose удалён вместе с volume. |
+| Photo статика и типы | `make lint typecheck` из `photo-access/` | [x] Ruff check/format и mypy прошли без ошибок в test image. |
+| Photo frontend | `npm test -- --run && npm run build` из `photo-access/frontend/` | [x] 43 Vitest passed в 3 файлах; TypeScript/Vite build прошёл. Очередь останавливается на 507 и показывает серверное описание лимита; главная показывает использованное и оставшееся место. Остались штатные предупреждения о runtime `/contour.css` и обычном script. |
+| Шкала Photo в браузере | `PLAYWRIGHT_CHANNEL=chrome node photo-access/scripts/storage-meter-browser-smoke.mjs` | [x] Подписи 1/4/5 ГБ, ARIA progressbar и отсутствие overflow на 1280/360 px прошли, 0 page errors; оба скриншота визуально проверены. |
+| Общая админка в браузере | `PLAYWRIGHT_CHANNEL=chrome node superapp/admin-browser-smoke.mjs` | [x] Mocked API: вкладка «Квоты фото», 5 ГБ, использование/остаток, установка 7,5 ГБ и сброс, desktop/mobile/dark регрессия, 0 page errors. Снимки `/tmp/cap-admin-photo-quota.png` и `/tmp/cap-admin-photo-quota-mobile.png` визуально проверены: на 1280 и 320 px поля, показатели и кнопки не пересекаются, горизонтального overflow нет. |
+| Public-link boundary | `test_public_links_never_require_identity_and_only_open_one_album`; frontend `public album isolation` suite | [x] Backend не вызывает identity даже при session cookie заблокированного посетителя; frontend public route не монтирует `AuthProvider`, отправляет Bearer с `credentials: omit`. |
+| Whitespace/JS syntax | `git diff --check`; `node --check superapp/www/admin.js` | [x] Прошли. |
+
+Не выполнялся объединённый `admin-live-smoke.mjs` против одного Compose со
+шлюзом, бюджетом, Photo API, Photo PostgreSQL и MinIO: живой PostgreSQL-контракт
+и браузерная админка проверены раздельно. Production/deploy, рабочие базы,
+release note и уведомления не изменялись.
+
 ## Точный поиск получателя доступа Photo-access: 2026-10-16
 
 Добавлен `GET /api/v1/superapp/apps/photo/users/resolve?username=...`:
@@ -829,3 +929,14 @@ application-managed физический backup удалён.
 - E2E покрытие пока smoke-уровня; большинство финансовых сценариев доказаны backend integration/unit-тестами, а не браузером.
 - Production SPA собирается, но основной minified JS chunk сейчас около 930,40 kB; Vite рекомендует code splitting.
 - Не закрыты сквозные проверки промежуточных платежей цели и offline/current multi-arch образов.
+
+
+## Совместный релиз cap space — 18 октября 2026
+
+Подробности production-операций и резервных копий хранятся в закрытом
+операционном журнале cap space. Для опубликованного снимка предыдущего
+релиза выполнены lint/test/build, 175 backend / 90 frontend tests, отдельный
+`make acceptance` с синтетическим владельцем (5 passed) и проверки общего
+входа, админки, RLS и миграции 0012 → 0013. Учётные записи и пользовательские
+данные сохранены. Исторические результаты не являются проверкой новых
+незакоммиченных изменений; для следующего релиза ниже будет отдельная запись.
